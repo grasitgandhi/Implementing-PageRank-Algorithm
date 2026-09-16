@@ -56,18 +56,21 @@
 
  DEPENDENCIES
  ------------
- Standard library only: os. Nothing from PyPI.
+ Standard library only: os, random, time. Nothing from PyPI.
 
  HOW TO RUN
  ----------
      python page_store.py
 
- The __main__ block inserts a few sample records, prints the raw file, shows
- the index built from it and looks a record up by id.
+ The __main__ block inserts a few sample records and prints the raw file
+ (Checkpoint 7), then builds a 1200-record store and times indexed get()
+ against a manual linear scan (Checkpoint 8).
 ===============================================================================
 """
 
 import os
+import random
+import time
 
 
 # -----------------------------------------------------------------------------
@@ -381,4 +384,97 @@ if __name__ == "__main__":
     print("\n  get('Not_A_Real_Page') on a missing id:")
     print("   ", demo_store.get("Not_A_Real_Page"))
 
+    # -------------------------------------------------------------------------
+    # DEMO 2 (Checkpoint 8) -- indexed get() vs manual linear scan.
+    #
+    # The benchmark is run at three store sizes rather than one. A single size
+    # only tells us which method was faster today; three sizes show HOW each
+    # method's cost reacts to the store growing, which is the actual claim being
+    # made -- O(1) against O(N). The smallest size, 1200, already satisfies the
+    # "at least 1000 records" requirement on its own.
+    # -------------------------------------------------------------------------
+    print("\n" + "-" * 70)
+    print("DEMO 2  --  benchmark: indexed get() vs linear scan, at three sizes")
+    print("-" * 70)
+
+    BENCHMARK_SIZES = (1200, 3000, 6000)
+
+    # 200 lookups per size, each of a randomly chosen id. Random rather than
+    # sequential so the linear scan is measured on its AVERAGE case (about N/2
+    # lines read), not on a best case where every id sits near the front.
+    BENCHMARK_LOOKUPS = 200
+
+    BENCH_DB = "benchmark_pages.db"
+
+    def run_benchmark(record_count, lookup_count, path):
+        """Time lookup_count random lookups both ways over record_count records.
+
+        Returns:
+            (indexed_seconds, linear_seconds, bytes_on_disk)
+        """
+        store = SimplePageStore(path, reset=True)
+        for record_number in range(record_count):
+            store.insert(
+                "page_{0:05d}".format(record_number),
+                "Synthetic page {0}".format(record_number),
+                record_number % 20,
+                "filler text for benchmark record number {0} ".format(record_number) * 5,
+            )
+
+        # Fixed seed per size so the same ids are looked up on every run of the
+        # program and the numbers quoted in the report stay reproducible.
+        random.seed(81)
+        lookup_ids = ["page_{0:05d}".format(random.randrange(record_count))
+                      for _ in range(lookup_count)]
+
+        # time.perf_counter, not time.time: perf_counter is monotonic and has
+        # the highest resolution the platform offers, which is what a benchmark
+        # needs. time.time can jump backwards if the system clock is adjusted.
+        indexed_start = time.perf_counter()
+        for lookup_id in lookup_ids:
+            store.get(lookup_id)
+        indexed_elapsed = time.perf_counter() - indexed_start
+
+        linear_start = time.perf_counter()
+        for lookup_id in lookup_ids:
+            store.linear_scan_get(lookup_id)
+        linear_elapsed = time.perf_counter() - linear_start
+
+        size_on_disk = os.path.getsize(path)
+        os.remove(path)
+        return indexed_elapsed, linear_elapsed, size_on_disk
+
+    print("\n  {0} random lookups at each size.\n".format(BENCHMARK_LOOKUPS))
+    print("    {0:>8}  {1:>10}  {2:>14}  {3:>14}  {4:>9}"
+          .format("records", "file size", "indexed (ms)", "linear (ms)", "speedup"))
+    print("    " + "-" * 62)
+
+    for size in BENCHMARK_SIZES:
+        indexed_seconds, linear_seconds, disk_bytes = run_benchmark(
+            size, BENCHMARK_LOOKUPS, BENCH_DB)
+
+        indexed_ms = 1000 * indexed_seconds / BENCHMARK_LOOKUPS
+        linear_ms = 1000 * linear_seconds / BENCHMARK_LOOKUPS
+
+        # Guard the division: on a fast machine the indexed time can round to
+        # zero, and a ZeroDivisionError is an embarrassing way to end a demo.
+        speedup = "{0:.1f} x".format(linear_ms / indexed_ms) if indexed_ms > 0 else "n/a"
+
+        print("    {0:>8}  {1:>9.0f}K  {2:>14.3f}  {3:>14.3f}  {4:>9}"
+              .format(size, disk_bytes / 1024.0, indexed_ms, linear_ms, speedup))
+
+    print("\n  Read the two middle columns down, not across. The indexed column")
+    print("  barely moves as the store grows five-fold, because a dict hit plus")
+    print("  one seek costs the same whether there are 1,200 records or 6,000 --")
+    print("  that is O(1). The linear column grows roughly in step with the file")
+    print("  size, because it reads about half of it every time -- that is O(N).")
+    print("\n  Honest note for the report: the indexed column is not flat at zero")
+    print("  because get() opens the file on each call, and that open is a fixed")
+    print("  cost per lookup which happens to dominate the seek itself. It is a")
+    print("  constant, so it does not change the O(1) claim -- it just sets the")
+    print("  floor the speedup is measured against.")
+
+    # The small demo file is left behind so it can be inspected after the run.
+    print("\n  ({0} removed after each run; {1} left on disk for inspection)"
+          .format(BENCH_DB, DEMO_DB))
     print("=" * 70)
