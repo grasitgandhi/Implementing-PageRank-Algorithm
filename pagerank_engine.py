@@ -3,6 +3,20 @@
  pagerank_engine.py  --  PageRank by power iteration (undamped and damped)
 ===============================================================================
 
+ PROJECT      : Implementing PageRank Algorithm (Group 81, TE Sem V Mini Project I)
+ AUTHOR       : Grasit Gandhi (2024300059)
+ CHECKPOINT   : 8  (undamped power iteration)
+                9  (damping factor + dangling-score redistribution + leak demo)
+                11 (reverse-adjacency sparse iteration + sparse/dense benchmark)
+ SRS MAPPING  : FR4.1, FR4.2, FR4.3, FR4.4, FR4.5
+ DAD MAPPING  : Design of Algorithm document, Section 6 "PageRank Engine"
+
+ PURPOSE
+ -------
+ Given the directed graph built by graph_model.py, assign every page a score
+ between 0 and 1 that measures how important the LINK STRUCTURE alone says that
+ page is. No text, no keywords, no machine learning -- only who links to whom.
+
  THE FORMULAS, IN THE ORDER WE BUILT THEM
  ----------------------------------------
  (1) Undamped (Checkpoint 8). The original eigenvector idea r = M*r. A page
@@ -42,9 +56,21 @@
 
  DEPENDENCIES
  ------------
- Standard library only: no imports beyond graph_model, which is our own file.
+ Standard library only: random and time, used by the Checkpoint 11 benchmark.
+ Imports graph_model, which is our own file.
+
+ HOW TO RUN
+ ----------
+     python pagerank_engine.py
+
+ The __main__ block runs four demos: undamped iteration (Checkpoint 8), damped
+ PageRank (Checkpoint 9), the score-leak contrast (Checkpoint 9), and the
+ sparse-vs-dense timing benchmark (Checkpoint 11).
 ===============================================================================
 """
+
+import random
+import time
 
 import graph_model
 
@@ -272,6 +298,215 @@ def pagerank(graph,
     return scores, iterations_run
 
 
+# =============================================================================
+# CHECKPOINT 11 -- sparse computation via a reverse-adjacency index
+# =============================================================================
+#
+# The pagerank() above already avoids a dense matrix: it walks each page's own
+# out-links and PUSHES score along them, touching each edge exactly once. That
+# is O(V + E) per iteration already.
+#
+# This checkpoint builds the other half of the picture -- a reverse-adjacency
+# index, incoming[i] = the list of pages linking TO i -- and iterates by PULLING
+# instead. Both are O(V + E), but pulling matches the formula as written:
+#
+#     r(i) = (1-d)/N + d * ( sum of r(j)/outdeg(j) for j linking to i + ... )
+#
+# so the code reads the way the maths reads, one page's new score computed in
+# one place. It also makes the contrast with the dense version below exact: same
+# loop structure, only the lookup differs.
+
+
+def build_incoming_index(graph):
+    """Build the reverse adjacency: for each page, who links to it.
+
+    Args:
+        graph: adjacency-list dict (page -> pages it links to).
+
+    Returns:
+        (incoming, out_degree) where incoming[page] is the list of pages linking
+        to it, and out_degree[page] is how many links that page sends out.
+
+    Built ONCE and reused across every iteration. Rebuilding it inside the loop
+    would multiply the cost by the iteration count for no benefit, since the
+    graph never changes while we are ranking it.
+    """
+    incoming = {page: [] for page in graph}
+    out_degree = {page: len(targets) for page, targets in graph.items()}
+
+    for source, targets in graph.items():
+        for target in targets:
+            incoming[target].append(source)
+
+    return incoming, out_degree
+
+
+def pagerank_sparse(graph,
+                    damping=DEFAULT_DAMPING,
+                    tolerance=DEFAULT_TOLERANCE,
+                    max_iterations=DEFAULT_MAX_ITERATIONS):
+    """Damped PageRank computed by pulling along a reverse-adjacency index.
+
+    Args:
+        graph:          adjacency-list dict.
+        damping:        d, probability of following a link.
+        tolerance:      stop when the total change drops below this.
+        max_iterations: hard cap on iterations.
+
+    Returns:
+        (scores, iterations_run). Identical results to pagerank(); only the
+        traversal direction differs.
+
+    Cost per iteration is O(V + E): the inner loop runs once per incoming edge
+    across the whole graph, and every page is visited once for the dangling and
+    teleport terms. It never looks at a pair of pages that are not connected.
+    """
+    pages = graph_model.all_pages(graph)
+    page_count = len(pages)
+
+    if page_count == 0:
+        raise ValueError("cannot rank an empty graph: N = 0 makes 1/N undefined")
+
+    incoming, out_degree = build_incoming_index(graph)
+    dangling_pages = [page for page in pages if out_degree[page] == 0]
+
+    scores = _initial_scores(pages)
+    teleport_term = (1.0 - damping) / page_count
+    iterations_run = 0
+
+    for iteration in range(1, max_iterations + 1):
+        iterations_run = iteration
+
+        # All the score currently sitting on dead ends, gathered before the main
+        # loop so every page's new value can include its share in one pass.
+        dangling_mass = sum(scores[page] for page in dangling_pages)
+        dangling_share = damping * dangling_mass / page_count
+
+        new_scores = {}
+        for page in pages:
+            # PULL: ask only the pages that actually link here. A dense version
+            # would instead test all N possible sources, almost all non-edges.
+            incoming_total = 0.0
+            for source in incoming[page]:
+                incoming_total += scores[source] / out_degree[source]
+
+            new_scores[page] = teleport_term + damping * incoming_total + dangling_share
+
+        delta = _l1_distance(scores, new_scores)
+        scores = new_scores
+
+        if delta < tolerance:
+            break
+
+    return scores, iterations_run
+
+
+def pagerank_dense(graph,
+                   damping=DEFAULT_DAMPING,
+                   tolerance=DEFAULT_TOLERANCE,
+                   max_iterations=DEFAULT_MAX_ITERATIONS):
+    """The same PageRank, computed with a dense N x N matrix. Deliberately slow.
+
+    Args:
+        graph:          adjacency-list dict.
+        damping:        d, probability of following a link.
+        tolerance:      stop when the total change drops below this.
+        max_iterations: hard cap on iterations.
+
+    Returns:
+        (scores, iterations_run). The same answer as pagerank_sparse().
+
+    This exists ONLY as the control group for the benchmark. It is the obvious
+    textbook implementation -- write the transition matrix out in full, multiply
+    it by the score vector -- and it is what the sparse version is defended
+    against. Nothing in the real pipeline calls it.
+
+    The cost is O(N^2) per iteration no matter how few links the graph has: the
+    inner loop runs N times for every one of the N pages, and on a crawl where
+    the average page links to maybe ten others, over 95% of those multiplications
+    are by a zero that was never going to contribute anything.
+    """
+    pages = graph_model.all_pages(graph)
+    page_count = len(pages)
+
+    if page_count == 0:
+        raise ValueError("cannot rank an empty graph")
+
+    position = {page: index for index, page in enumerate(pages)}
+
+    # The full N x N transition matrix, zeros and all. This allocation alone is
+    # O(N^2) memory -- 250,000 floats for a 500-page graph, against roughly
+    # 500 + E list entries for the adjacency form.
+    matrix = [[0.0] * page_count for _ in range(page_count)]
+
+    for source, targets in graph.items():
+        column = position[source]
+        if not targets:
+            # Dangling column spread uniformly, matching the sparse version's
+            # redistribution of trapped score.
+            for row in range(page_count):
+                matrix[row][column] = 1.0 / page_count
+        else:
+            share = 1.0 / len(targets)
+            for target in targets:
+                matrix[position[target]][column] = share
+
+    vector = [1.0 / page_count] * page_count
+    teleport_term = (1.0 - damping) / page_count
+    iterations_run = 0
+
+    for iteration in range(1, max_iterations + 1):
+        iterations_run = iteration
+
+        new_vector = []
+        for row in range(page_count):
+            # The full dot product of one matrix row with the score vector --
+            # every single column touched, zero or not. This is the line the
+            # sparse version exists to avoid.
+            total = 0.0
+            for column in range(page_count):
+                total += matrix[row][column] * vector[column]
+            new_vector.append(teleport_term + damping * total)
+
+        delta = sum(abs(new_vector[i] - vector[i]) for i in range(page_count))
+        vector = new_vector
+
+        if delta < tolerance:
+            break
+
+    return {page: vector[position[page]] for page in pages}, iterations_run
+
+
+def make_random_graph(page_count, links_per_page, seed=81):
+    """Build a synthetic graph for benchmarking.
+
+    Args:
+        page_count:     how many pages.
+        links_per_page: roughly how many out-links each page gets.
+        seed:           fixed so every run benchmarks the identical graph and
+                        the timings in the report are reproducible.
+
+    Returns:
+        adjacency-list dict.
+
+    Sparse on purpose: links_per_page stays constant as page_count grows, which
+    is how real web graphs behave -- a page does not link to more things just
+    because the web got bigger. That is exactly the condition under which O(k*E)
+    and O(k*N^2) pull apart.
+    """
+    random.seed(seed)
+    names = ["p{0:04d}".format(index) for index in range(page_count)]
+
+    graph = {name: [] for name in names}
+    for source in names:
+        for _ in range(links_per_page):
+            target = names[random.randrange(page_count)]
+            if target != source and target not in graph[source]:
+                graph[source].append(target)
+
+    return graph
+
+
 def top_pages(scores, count=10):
     """Return the highest-scoring pages as a list of (page, score) pairs.
 
@@ -385,4 +620,52 @@ if __name__ == "__main__":
     print("  score eventually drains into the dead end and is destroyed.")
     print("  The damped column holds at exactly 1.00000000, which is what makes")
     print("  the scores comparable as probabilities and rankable against each other.")
+    # -------------------------------------------------------------------------
+    # DEMO 4 (Checkpoint 11) -- sparse vs dense, across growing graphs
+    # -------------------------------------------------------------------------
+    print("\n" + "-" * 70)
+    print("DEMO 4  --  sparse adjacency vs dense matrix, as the graph grows")
+    print("-" * 70)
+
+    # Each page keeps ~10 out-links regardless of graph size, so E grows
+    # linearly with N while N^2 grows quadratically. That gap is the point.
+    LINKS_PER_PAGE = 10
+    BENCHMARK_SIZES = (50, 200, 500)
+
+    print("\n  Every page has ~{0} out-links at every size.\n".format(LINKS_PER_PAGE))
+    print("    {0:>7} {1:>9} {2:>13} {3:>13} {4:>10} {5:>9}"
+          .format("pages", "edges", "sparse (s)", "dense (s)", "speedup", "agree?"))
+    print("    " + "-" * 66)
+
+    for size in BENCHMARK_SIZES:
+        benchmark_graph = make_random_graph(size, LINKS_PER_PAGE)
+        edge_total = graph_model.edge_count(benchmark_graph)
+
+        sparse_start = time.perf_counter()
+        sparse_scores, _ = pagerank_sparse(benchmark_graph)
+        sparse_seconds = time.perf_counter() - sparse_start
+
+        dense_start = time.perf_counter()
+        dense_scores, _ = pagerank_dense(benchmark_graph)
+        dense_seconds = time.perf_counter() - dense_start
+
+        # Both methods must produce the same ranking, or the speed comparison is
+        # meaningless -- a fast wrong answer is not an optimisation.
+        largest_gap = max(abs(sparse_scores[page] - dense_scores[page])
+                          for page in benchmark_graph)
+        agree = "yes" if largest_gap < 1e-9 else "NO"
+
+        speedup = ("{0:.1f} x".format(dense_seconds / sparse_seconds)
+                   if sparse_seconds > 0 else "n/a")
+
+        print("    {0:>7} {1:>9} {2:>13.4f} {3:>13.4f} {4:>10} {5:>9}"
+              .format(size, edge_total, sparse_seconds, dense_seconds, speedup, agree))
+
+    print("\n  The speedup grows with the graph, which is the whole claim:")
+    print("    sparse  = O(k * E)    edges grow linearly with pages")
+    print("    dense   = O(k * N^2)  work grows with the SQUARE of pages")
+    print("\n  Ten times the pages means ten times the work for sparse, but a")
+    print("  hundred times the work for dense. At 500 pages the dense version is")
+    print("  spending over 95% of its multiplications on zeros -- pairs of pages")
+    print("  with no link between them, which the adjacency list never visits.")
     print("=" * 70)
