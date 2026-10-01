@@ -7,8 +7,8 @@
  AUTHOR       : Rudraksh Shah (2024300214)
  CHECKPOINT   : 9  (tokenize + term frequency)
                 10 (IDF, TF-IDF vectors, cosine similarity)
-                -- Checkpoint 12 adds the SearchEngine class and score fusion
- SRS MAPPING  : FR5.2  (text relevance scoring)
+                12 (SearchEngine class, relevance + PageRank fusion)
+ SRS MAPPING  : FR5.1, FR5.2, FR5.3, FR5.4
  DAD MAPPING  : Design of Algorithm document, Section 7 "TF-IDF and Score Fusion"
 
  PURPOSE
@@ -53,7 +53,8 @@
      python search_engine.py
 
  The __main__ block walks a small corpus through every stage: tokenising, term
- frequency, IDF, TF-IDF vectors and cosine similarity.
+ frequency, IDF, TF-IDF vectors, cosine similarity, and finally the fused
+ relevance-plus-authority ranking.
 ===============================================================================
 """
 
@@ -301,6 +302,207 @@ def cosine_similarity(vector_a, vector_b):
     return dot_product / (magnitude_a * magnitude_b)
 
 
+# =============================================================================
+# CHECKPOINT 12 -- fusing relevance with authority
+# =============================================================================
+#
+# Everything above answers "is this page ABOUT the query?". pagerank_engine.py
+# answers "is this page IMPORTANT?". Neither is a search engine on its own:
+#
+#   - relevance alone ranks a scraped keyword-stuffed page above Wikipedia,
+#     because stuffing a word fifty times is trivially easy;
+#   - authority alone returns the same famous pages for every query, because it
+#     never looked at what was typed.
+#
+# The fix is a weighted sum of the two, with both parts normalised to [0, 1]
+# first so neither can dominate purely because of its natural scale:
+#
+#     final = alpha * relevance + (1 - alpha) * pagerank
+#
+# WHY NORMALISE FIRST: cosine similarity already lives in [0, 1], but PageRank
+# scores sum to 1.0 across the whole corpus, so on 150 pages a typical score is
+# about 0.007 and the very best is maybe 0.03. Added raw, PageRank would move
+# the final score by a few thousandths while relevance moved it by whole points
+# -- alpha would be a dial connected to nothing. Dividing each by its own
+# maximum puts both on the same footing, so alpha actually controls the balance.
+
+
+# How much weight relevance gets, with the remainder going to PageRank. 0.5 is
+# an even split, chosen as a defensible starting point rather than a tuned one:
+# we have no labelled "correct results" to tune against, and inventing a
+# precise-looking value we cannot justify would be worse than an honest half.
+# The demo below sweeps alpha so the effect of changing it is visible.
+DEFAULT_ALPHA = 0.5
+
+
+def normalise(scores):
+    """Scale a dict of scores so the largest becomes 1.0.
+
+    Args:
+        scores: dict key -> float, all non-negative.
+
+    Returns:
+        dict key -> float in [0, 1].
+
+    Dividing by the MAXIMUM rather than by the sum, because we want the best
+    page to score 1.0 regardless of how many pages there are. Dividing by the
+    sum would make every score shrink as the corpus grew, which would quietly
+    change what a given alpha means as the crawl got bigger.
+    """
+    if not scores:
+        return {}
+
+    largest = max(scores.values())
+
+    if largest <= 0.0:
+        # Every score is zero: no query term matched anything. Returning zeros
+        # rather than dividing by zero, so the search returns an empty result
+        # set instead of raising.
+        return {key: 0.0 for key in scores}
+
+    return {key: value / largest for key, value in scores.items()}
+
+
+class SearchEngine:
+    """Ranks pages by combining text relevance with PageRank authority.
+
+    Matches the SearchEngine class in the Checkpoint 5 UML class diagram, which
+    has it using both SimplePageStore and PageRankEngine.
+
+    Attributes:
+        page_texts:     dict page_id -> that page's text.
+        pagerank:       dict page_id -> PageRank score.
+        idf:            dict term -> inverse document frequency, built once.
+        vectors:        dict page_id -> TF-IDF vector, built once.
+        normalised_rank: dict page_id -> PageRank scaled into [0, 1], built once.
+    """
+
+    def __init__(self, page_texts, pagerank_scores):
+        """Build every TF-IDF vector up front, at construction time.
+
+        Args:
+            page_texts:      dict page_id -> text, as page_store supplies.
+            pagerank_scores: dict page_id -> score, as pagerank_engine supplies.
+
+        Pages present in one dict but not the other are handled rather than
+        crashing: a page with text but no rank gets 0.0 authority, and a page
+        with a rank but no text simply cannot match any query. Both really
+        happen -- the crawler records links to pages it never fetched.
+
+        WHY BUILD THE VECTORS IN THE CONSTRUCTOR: tokenising 150 pages takes
+        real time, and it does not depend on the query. Doing it once here means
+        every subsequent search only has to vectorise the handful of words the
+        user typed, which is what makes repeated searching feel instant.
+        """
+        self.page_texts = page_texts
+
+        # Tokenise every page once. This is the expensive step, deliberately
+        # paid at startup rather than per query.
+        self.tokenised = {page_id: tokenize(text)
+                          for page_id, text in page_texts.items()}
+
+        # IDF depends on the whole corpus, so it can only be computed after
+        # every page has been tokenised -- and it never changes afterwards.
+        self.idf = compute_idf(self.tokenised)
+
+        self.vectors = {page_id: build_tfidf_vector(tokens, self.idf)
+                        for page_id, tokens in self.tokenised.items()}
+
+        # .get(page_id, 0.0) so a page with text but no PageRank entry scores
+        # zero authority instead of raising KeyError mid-search.
+        self.pagerank = {page_id: pagerank_scores.get(page_id, 0.0)
+                         for page_id in page_texts}
+
+        self.normalised_rank = normalise(self.pagerank)
+
+    def search(self, query, alpha=DEFAULT_ALPHA, limit=5):
+        """Rank pages against a query (FR5.1 - FR5.4).
+
+        Args:
+            query: free text typed by the user.
+            alpha: 0.0 trusts PageRank alone, 1.0 trusts relevance alone.
+            limit: how many results to return.
+
+        Returns:
+            list of dicts, each with page_id, final, relevance and pagerank, so
+            the caller can show the sub-scores separately and the ranking can be
+            argued with rather than taken on faith. Sorted best first.
+
+        Pages with zero relevance are dropped before fusion. Keeping them would
+        let a famous but entirely unrelated page ride its PageRank into the
+        results for a query it has no connection to -- which is exactly the
+        failure mode the fusion is meant to prevent.
+
+        ONE BEHAVIOUR TO KNOW ABOUT: a query made only of terms that appear in
+        (nearly) every document returns NOTHING, not everything. Such a term has
+        idf at or below zero, so its TF-IDF weight is zero, every cosine
+        similarity comes out 0.0, and the filter above removes every page. That
+        is defensible -- a word present everywhere genuinely does not
+        distinguish between pages -- but it surprises people, because searching
+        a common word feels like it should match a lot rather than nothing. It
+        matters most on a tiny corpus, where "in nearly every document" can mean
+        four pages out of five; across a 150-page crawl far fewer terms land
+        there. A larger corpus is the real fix, not a special case here.
+        """
+        query_vector = build_tfidf_vector(tokenize(query), self.idf)
+
+        if not query_vector:
+            # Every word in the query is absent from the corpus, so nothing can
+            # match. An empty list is the honest answer.
+            return []
+
+        raw_relevance = {}
+        for page_id, vector in self.vectors.items():
+            similarity = cosine_similarity(query_vector, vector)
+            if similarity > 0.0:
+                raw_relevance[page_id] = similarity
+
+        if not raw_relevance:
+            return []
+
+        relevance = normalise(raw_relevance)
+
+        results = []
+        for page_id, relevance_score in relevance.items():
+            authority = self.normalised_rank.get(page_id, 0.0)
+            results.append({
+                "page_id": page_id,
+                "final": alpha * relevance_score + (1.0 - alpha) * authority,
+                "relevance": relevance_score,
+                "pagerank": authority,
+            })
+
+        # Sort by final score descending, then page_id ascending. The page_id
+        # tiebreak keeps the order stable when scores are equal, which happens
+        # often on small corpora and would otherwise make the output shuffle
+        # between runs and break the tests.
+        results.sort(key=lambda row: (-row["final"], row["page_id"]))
+
+        return results[:limit]
+
+    def explain(self, query, alpha=DEFAULT_ALPHA, limit=5):
+        """Print a readable ranked table showing both sub-scores.
+
+        Separate from search() so that search() stays a pure function returning
+        data, and only this method knows anything about formatting.
+        """
+        results = self.search(query, alpha=alpha, limit=limit)
+
+        print("  query: {0!r}   (alpha = {1}: {2:.0f}% relevance, {3:.0f}% authority)"
+              .format(query, alpha, alpha * 100, (1 - alpha) * 100))
+
+        if not results:
+            print("    no page matched any word in that query")
+            return
+
+        print("    {0:<4} {1:<26} {2:>9} {3:>11} {4:>10}"
+              .format("#", "page", "final", "relevance", "pagerank"))
+        for position, row in enumerate(results, start=1):
+            print("    {0:<4} {1:<26} {2:>9.4f} {3:>11.4f} {4:>10.4f}"
+                  .format(position, row["page_id"], row["final"],
+                          row["relevance"], row["pagerank"]))
+
+
 if __name__ == "__main__":
     print("=" * 70)
     print("search_engine.py  --  demo (Checkpoint 9: tokenize + term frequency)")
@@ -435,7 +637,78 @@ if __name__ == "__main__":
             print("      {0:<6} {1:>8.4f}  {2}".format(document_id, score, bar))
         print()
 
-    print("  Next checkpoint (12): the SearchEngine class combines this relevance")
-    print("  score with each page's PageRank, so a result has to be both on-topic")
-    print("  and well-linked to rank highly.")
+    # -------------------------------------------------------------------------
+    # Step 7 (Checkpoint 12): the SearchEngine class -- relevance + authority
+    # -------------------------------------------------------------------------
+    print("\n" + "-" * 70)
+    print("STEP 7  --  SearchEngine: fusing relevance with PageRank")
+    print("-" * 70)
+
+    # A slightly larger corpus than the three sentences above, so the fusion has
+    # something to actually choose between. Texts are deliberately short so the
+    # arithmetic stays checkable by hand.
+    CORPUS = {
+        "PageRank": "PageRank is an algorithm that ranks web pages using the link "
+                    "structure of the web. PageRank was created by Larry Page.",
+        "Google_Search": "Google Search is a web search engine. It ranks pages using "
+                         "PageRank and many other signals to find relevant results.",
+        "Larry_Page": "Larry Page is a computer scientist who co-created the PageRank "
+                      "algorithm and co-founded Google.",
+        "Hyperlink": "A hyperlink is a link from one web page to another. Links "
+                     "between pages form the structure of the web.",
+        "Spam_page": "pagerank pagerank pagerank pagerank pagerank web web web pages "
+                     "pages ranks ranks link link algorithm algorithm",
+    }
+
+    # Stand-in PageRank scores: the real ones come from pagerank_engine, but
+    # hard-coding them here keeps this demo runnable on its own. Note that
+    # Spam_page has almost no authority -- nothing links to it -- which is the
+    # whole point of the last demo below.
+    PAGERANK_SCORES = {
+        "PageRank": 0.3200,
+        "Google_Search": 0.2900,
+        "Larry_Page": 0.1500,
+        "Hyperlink": 0.2300,
+        "Spam_page": 0.0100,
+    }
+
+    engine = SearchEngine(CORPUS, PAGERANK_SCORES)
+
+    print("\n  corpus: {0} pages, {1} distinct terms\n"
+          .format(len(CORPUS), len(engine.idf)))
+
+    for query in ["pagerank algorithm", "web search engine", "link structure"]:
+        engine.explain(query)
+        print()
+
+    # -------------------------------------------------------------------------
+    # Step 8: what alpha actually does, and why fusion beats either half alone.
+    # -------------------------------------------------------------------------
+    print("-" * 70)
+    print("STEP 8  --  sweeping alpha on a keyword-stuffed page")
+    print("-" * 70)
+
+    print("\n  'Spam_page' repeats 'pagerank' and 'algorithm' over and over, and")
+    print("  nothing links to it. Watch where it lands as alpha moves from pure")
+    print("  authority to pure relevance.\n")
+
+    SWEEP_QUERY = "pagerank algorithm"
+
+    for alpha in (0.0, 0.25, 0.5, 0.75, 1.0):
+        results = engine.search(SWEEP_QUERY, alpha=alpha, limit=5)
+        ordering = " > ".join(row["page_id"] for row in results)
+        print("    alpha = {0:.2f}  ->  {1}".format(alpha, ordering))
+
+    print("\n  A note on why the query is two words and not just 'pagerank':")
+    print("  'pagerank' alone appears in 4 of these 5 pages, so its idf is")
+    print("  log(5/5) = 0 and it carries no signal whatsoever -- searching it")
+    print("  returns an empty result set. Adding 'algorithm' brings in a term")
+    print("  that does discriminate. On a 150-page crawl this is rarely an")
+    print("  issue; on a 5-page demo corpus it is easy to trip over.")
+
+    print("\n  At alpha = 1.00 (relevance only) the spam page wins outright --")
+    print("  repeating a word is all it takes. At alpha = 0.00 (authority only)")
+    print("  the ranking ignores the query completely. Between the two, the spam")
+    print("  page is pushed down by its missing link authority while genuinely")
+    print("  relevant pages keep their place. That is the argument for fusing.")
     print("=" * 70)
