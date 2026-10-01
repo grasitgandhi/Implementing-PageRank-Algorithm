@@ -3,19 +3,6 @@
  pagerank_engine.py  --  PageRank by power iteration (undamped and damped)
 ===============================================================================
 
- PROJECT      : Implementing PageRank Algorithm (Group 81, TE Sem V Mini Project I)
- AUTHOR       : Grasit Gandhi (2024300059)
- CHECKPOINT   : 8  (undamped power iteration)
-                9  (damping factor + dangling-score redistribution + leak demo)
- SRS MAPPING  : FR4.1, FR4.2, FR4.3, FR4.4, FR4.5
- DAD MAPPING  : Design of Algorithm document, Section 6 "PageRank Engine"
-
- PURPOSE
- -------
- Given the directed graph built by graph_model.py, assign every page a score
- between 0 and 1 that measures how important the LINK STRUCTURE alone says that
- page is. No text, no keywords, no machine learning -- only who links to whom.
-
  THE FORMULAS, IN THE ORDER WE BUILT THEM
  ----------------------------------------
  (1) Undamped (Checkpoint 8). The original eigenvector idea r = M*r. A page
@@ -56,14 +43,6 @@
  DEPENDENCIES
  ------------
  Standard library only: no imports beyond graph_model, which is our own file.
-
- HOW TO RUN
- ----------
-     python pagerank_engine.py
-
- The __main__ block runs three demos: undamped iteration on the example graph
- (Checkpoint 8), damped PageRank on the same graph (Checkpoint 9), and the
- score-leak demo contrasting the two (Checkpoint 9).
 ===============================================================================
 """
 
