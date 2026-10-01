@@ -9,6 +9,7 @@
  CHECKPOINT   : 7  (raw socket GET over plain HTTP + response parsing by hand)
                 8  (TLS wrapping with ssl + chunked Transfer-Encoding decoding)
                 9  (breadth-first crawl queue + edges.txt writer)
+                10 (failure handling extracted into fetch_safely)
  SRS MAPPING  : FR1.1, FR1.2, FR1.3, FR1.4, FR1.5, FR1.6, FR1.7, NFR6, NFR7
  DAD MAPPING  : Design of Algorithm document, Section 3 "BFS Crawling Algorithm"
 
@@ -474,6 +475,78 @@ def fetch(host, path, use_tls=True, port=None, redirects_left=MAX_REDIRECTS):
 
 
 # =============================================================================
+# CHECKPOINT 10 -- failure handling, pulled out of the crawl loop
+# =============================================================================
+#
+# The response parsing this checkpoint asks about is already its own function --
+# parse_http_response() above was written that way at Checkpoint 7, with
+# decode_chunked_body() split out alongside it at Checkpoint 8. So fetch() never
+# grew into the unreadable blob the refactor was meant to prevent, and there is
+# nothing to extract there.
+#
+# What DID need extracting is the error handling. It had grown into two separate
+# failure branches sitting inside crawl()'s main loop, which buried the actual
+# breadth-first logic under exception plumbing. fetch_safely() below takes that
+# over, so crawl() can simply ask for a page and get either HTML or None.
+
+
+def fetch_safely(host, path, label=None, verbose=True):
+    """Fetch one page, returning None instead of raising when anything fails.
+
+    Args:
+        host:    server to connect to.
+        path:    path to request.
+        label:   human-readable name for the log line; defaults to the path.
+        verbose: print a one-line reason when a page is skipped.
+
+    Returns:
+        the page HTML as a str, or None if the page could not be fetched.
+
+    SRS NFR6 is explicit that a single failed or malformed page must not end the
+    crawl. A 150-page run across the open internet WILL hit dead links, slow
+    servers and the occasional 403 -- that is normal, not exceptional, so the
+    caller gets None and moves on rather than a traceback and a dead program.
+
+    Every failure prints a reason. A crawl that silently returns 40 pages
+    instead of 150 is far harder to debug than one that says why 110 were
+    skipped, and the report needs that count anyway.
+    """
+    if label is None:
+        label = path
+
+    try:
+        status_code, _headers, html = fetch(host, path)
+    except OSError as network_error:
+        # OSError is the common base of socket.timeout, ConnectionError,
+        # socket.gaierror (DNS failure) and ssl.SSLError, so this one clause
+        # covers every network-level failure mode without listing them all.
+        if verbose:
+            print("  [skip] {0}: {1}".format(label, network_error))
+        return None
+    except (ValueError, UnicodeError) as parse_error:
+        # A malformed response that got past parse_http_response. Rare, but a
+        # crawl is at the mercy of whatever a stranger's server sends back.
+        if verbose:
+            print("  [skip] {0}: malformed response ({1})".format(label, parse_error))
+        return None
+
+    if status_code != 200:
+        # 404 for a dead link, 403 for a blocked one, 5xx for a server having a
+        # bad day. All ordinary events during a crawl, none of them worth
+        # stopping for.
+        if verbose:
+            print("  [skip] {0}: HTTP {1}".format(label, status_code))
+        return None
+
+    if not html:
+        if verbose:
+            print("  [skip] {0}: empty body".format(label))
+        return None
+
+    return html
+
+
+# =============================================================================
 # CHECKPOINT 9 -- link extraction and the breadth-first crawl
 # =============================================================================
 
@@ -646,21 +719,14 @@ def crawl(seed_titles,
         title = queue[read_head]
         read_head += 1
 
-        try:
-            status_code, _headers, html = fetch(host, WIKI_PATH_PREFIX + title)
-        except OSError as network_error:
-            # Timeout, DNS failure, refused connection, TLS error. SRS NFR6 is
-            # explicit that one bad page must not end the crawl, so we report it
-            # and move on. (Checkpoint 10 tidies this handling into the report.)
-            failure_count += 1
-            if verbose:
-                print("  [skip] {0}: {1}".format(title, network_error))
-            continue
+        # One call, one answer: HTML or None. Every failure mode -- timeout,
+        # DNS failure, 404, 403, empty body, malformed response -- is handled
+        # inside fetch_safely and reported there, so the loop below stays about
+        # breadth-first traversal and nothing else.
+        html = fetch_safely(host, WIKI_PATH_PREFIX + title, label=title, verbose=verbose)
 
-        if status_code != 200 or not html:
+        if html is None:
             failure_count += 1
-            if verbose:
-                print("  [skip] {0}: HTTP {1}".format(title, status_code))
             continue
 
         # Drop self-links. Wikipedia's own header links an article back to
