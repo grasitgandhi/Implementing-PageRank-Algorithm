@@ -10,7 +10,8 @@
                 8  (TLS wrapping with ssl + chunked Transfer-Encoding decoding)
                 9  (breadth-first crawl queue + edges.txt writer)
                 10 (failure handling extracted into fetch_safely)
- SRS MAPPING  : FR1.1, FR1.2, FR1.3, FR1.4, FR1.5, FR1.6, FR1.7, NFR6, NFR7
+                11 (cache mode so a demo never depends on the network)
+ SRS MAPPING  : FR1.1-FR1.7, FR2.3, FR2.4, NFR4, NFR6, NFR7
  DAD MAPPING  : Design of Algorithm document, Section 3 "BFS Crawling Algorithm"
 
  PURPOSE
@@ -76,6 +77,37 @@ import re
 import socket
 import ssl
 import time
+
+# -----------------------------------------------------------------------------
+# USAGE NOTE -- running a real crawl versus reusing cached data
+# -----------------------------------------------------------------------------
+#
+# This module has two modes, and during development and demos you almost always
+# want the second one.
+#
+#   LIVE CRAWL -- goes out to the internet, takes minutes, needs the network up.
+#
+#       edges, pages = crawl(["PageRank", "Search_engine"], max_pages=150)
+#       write_edges_file(edges)
+#
+#       Roughly 5-10 minutes for 150 pages: each page costs a 1-second politeness
+#       delay plus the download itself, and Wikipedia articles run 300-600 KB.
+#       Run this once, deliberately, and commit the edges.txt it produces.
+#
+#   CACHED -- reads edges.txt off disk, instant, works with the network unplugged.
+#
+#       edges = load_or_crawl(["PageRank"], max_pages=150)
+#
+#       If edges.txt exists it is loaded and no request is made. If it does not,
+#       a live crawl runs and writes it. Pass force_crawl=True to re-crawl even
+#       when a cache is present.
+#
+# WHY THIS EXISTS: SRS NFR4 requires the system to stay usable on previously
+# cached data when live network access is unavailable. The practical version of
+# that requirement is the viva -- if the college wifi drops during the demo, the
+# ranking and search commands still have to run. edges.txt is committed to the
+# repository for exactly that reason, and it is the one generated file that is
+# deliberately NOT in .gitignore.
 
 
 # -----------------------------------------------------------------------------
@@ -817,6 +849,100 @@ def read_edges_file(path=EDGES_FILE):
     return edges
 
 
+# =============================================================================
+# CHECKPOINT 11 -- cache mode, so a demo never depends on the network
+# =============================================================================
+
+
+def edges_cache_status(path=EDGES_FILE):
+    """Report what is already cached on disk, without crawling anything.
+
+    Args:
+        path: the edges file to inspect.
+
+    Returns:
+        dict with keys:
+            exists      -- True if the file is there
+            edge_count  -- how many edges it holds (0 if absent)
+            page_count  -- how many distinct pages those edges mention
+            size_bytes  -- file size on disk
+
+    Read-only and instant. The point is to be able to answer "do we need to
+    crawl?" and "is what we have any good?" before committing to a run that
+    takes ten minutes.
+    """
+    if not os.path.exists(path):
+        return {"exists": False, "edge_count": 0, "page_count": 0, "size_bytes": 0}
+
+    edges = read_edges_file(path)
+
+    # A set, not a list, because the same page appears as the source of dozens
+    # of edges and we want each counted once. Union of both ends, since a page
+    # that is only ever a target is still a page in the graph.
+    distinct_pages = set()
+    for source, target in edges:
+        distinct_pages.add(source)
+        distinct_pages.add(target)
+
+    return {
+        "exists": True,
+        "edge_count": len(edges),
+        "page_count": len(distinct_pages),
+        "size_bytes": os.path.getsize(path),
+    }
+
+
+def load_or_crawl(seed_titles,
+                  max_pages,
+                  path=EDGES_FILE,
+                  force_crawl=False,
+                  verbose=True):
+    """Return an edge list, from cache if possible and from the network if not.
+
+    Args:
+        seed_titles: titles to start a live crawl from, if one turns out to be
+                     needed.
+        max_pages:   page limit for that crawl.
+        path:        the cache file.
+        force_crawl: True to ignore any cache and crawl afresh.
+        verbose:     print which mode was taken and why.
+
+    Returns:
+        list of (source, target) pairs.
+
+    This is the function the CLI calls. Everything downstream -- graph building,
+    PageRank, search -- works identically whether the edges arrived from disk or
+    from the network, which is what makes the offline demo possible at all.
+    """
+    status = edges_cache_status(path)
+
+    if status["exists"] and not force_crawl:
+        if verbose:
+            print("  cache hit: {0}".format(path))
+            print("    {0} edges across {1} pages ({2:,} bytes)"
+                  .format(status["edge_count"], status["page_count"],
+                          status["size_bytes"]))
+            print("    skipping the crawl -- no network access needed")
+            print("    (pass force_crawl=True to crawl again anyway)")
+        return read_edges_file(path)
+
+    if verbose:
+        if force_crawl and status["exists"]:
+            print("  force_crawl set: ignoring the {0} cached edges and re-crawling"
+                  .format(status["edge_count"]))
+        else:
+            print("  no cache at {0}: running a live crawl".format(path))
+        print("  seeds: {0} | max pages: {1}".format(", ".join(seed_titles), max_pages))
+
+    edges, _pages = crawl(seed_titles, max_pages, verbose=verbose)
+    write_edges_file(edges, path)
+
+    if verbose:
+        print("  wrote {0} edges to {1}".format(len(edges), path))
+
+    return edges
+
+
 if __name__ == "__main__":
     print("=" * 70)
     print("crawler.py  --  demo")
@@ -904,5 +1030,27 @@ if __name__ == "__main__":
     except OSError as error:
         print("  crawl failed: {0}".format(error))
         print("  cached edges on disk: {0} edges".format(len(read_edges_file())))
+    # -------------------------------------------------------------------------
+    # DEMO 4 (Checkpoint 11) -- cache mode, which needs no network at all
+    # -------------------------------------------------------------------------
+    print("\n" + "-" * 70)
+    print("DEMO 4  --  cached-data mode")
+    print("-" * 70)
 
+    status = edges_cache_status()
+    print("\n  edges_cache_status():")
+    for key in ("exists", "edge_count", "page_count", "size_bytes"):
+        print("    {0:<12}: {1}".format(key, status[key]))
+
+    if status["exists"]:
+        print("\n  Calling load_or_crawl() with a cache present:\n")
+        cached_edges = load_or_crawl(["PageRank"], 150)
+        print("\n  got {0} edges back without touching the network"
+              .format(len(cached_edges)))
+    else:
+        print("\n  No edges.txt yet. load_or_crawl() would run a live crawl here")
+        print("  and write the file, so the next run takes this branch instead.")
+
+    print("\n  This is what SRS NFR4 asks for: once edges.txt is committed, every")
+    print("  later stage of the project runs with the network unplugged.")
     print("=" * 70)
