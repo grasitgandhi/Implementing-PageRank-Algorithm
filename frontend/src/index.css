@@ -183,3 +183,75 @@ body {
               border-color 0.3s ease,
               box-shadow 0.3s ease;
 }
+
+/* ═══════════════════════════════════════════════════
+   ALPHA RANGE SLIDER
+   ═══════════════════════════════════════════════════ */
+
+.alpha-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--border);
+  outline: none;
+  cursor: pointer;
+}
+
+/* Webkit (Chrome / Edge / Safari) — track */
+.alpha-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--border);
+}
+
+/* Webkit — thumb */
+.alpha-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, var(--accent-start), var(--accent-mid));
+  border: 2px solid var(--card);
+  box-shadow: 0 0 8px var(--accent-glow);
+  margin-top: -6px;
+  cursor: pointer;
+  transition: box-shadow 0.2s ease, transform 0.15s ease;
+}
+
+.alpha-range::-webkit-slider-thumb:hover {
+  box-shadow: 0 0 14px var(--accent-glow);
+  transform: scale(1.15);
+}
+
+/* Firefox — track */
+.alpha-range::-moz-range-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--border);
+}
+
+/* Firefox — filled portion */
+.alpha-range::-moz-range-progress {
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, var(--accent-start), var(--accent-mid));
+}
+
+/* Firefox — thumb */
+.alpha-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, var(--accent-start), var(--accent-mid));
+  border: 2px solid var(--card);
+  box-shadow: 0 0 8px var(--accent-glow);
+  cursor: pointer;
+  transition: box-shadow 0.2s ease, transform 0.15s ease;
+}
+
+.alpha-range::-moz-range-thumb:hover {
+  box-shadow: 0 0 14px var(--accent-glow);
+  transform: scale(1.15);
+}

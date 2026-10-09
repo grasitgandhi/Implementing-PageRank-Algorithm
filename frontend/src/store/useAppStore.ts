@@ -77,7 +77,7 @@ export const useAppStore = create<AppState>((set) => ({
   alpha: 0.5,
   setAlpha: (alpha) => set({ alpha }),
 
-  showBreakdown: false,
+  showBreakdown: true,
   setShowBreakdown: (showBreakdown) => set({ showBreakdown }),
   showCosine: false,
   setShowCosine: (showCosine) => set({ showCosine }),
