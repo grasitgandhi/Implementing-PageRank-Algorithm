@@ -1,5 +1,4 @@
 """
-===============================================================================
  crawler.py  --  Hand-built HTTP/1.1 client over raw TCP sockets, plus a
                  breadth-first web crawler
 ===============================================================================
@@ -693,7 +692,27 @@ def extract_visible_text(html):
     # search_engine.py splits on whitespace anyway, and a single-line string is
     # far easier to store in the one-record-per-line page_store format.
     return WHITESPACE_PATTERN.sub(" ", text).strip()
+def normalize_title(raw_title):
+    """Turn a human-typed seed title into a valid Wikipedia path segment.
 
+    Wikipedia uses underscores for spaces and percent-encodes anything
+    outside [A-Za-z0-9_.~-]. Without this, a seed like "Delhi protest"
+    puts a raw space in the HTTP request line, which is invalid HTTP, so
+    the server rejects it and the seed is skipped.
+
+    Only used on seeds typed by a person. Titles scraped from page HTML
+    are already encoded, so running them through this again would
+    double-encode them.
+    """
+    title = raw_title.strip().replace(" ", "_")
+    encoded = []
+    for ch in title:
+        if ch.isascii() and (ch.isalnum() or ch in "_.~-()"):
+            encoded.append(ch)
+        else:
+            for byte in ch.encode("utf-8"):
+                encoded.append("%{0:02X}".format(byte))
+    return "".join(encoded)
 
 def crawl(seed_titles,
           max_pages,
