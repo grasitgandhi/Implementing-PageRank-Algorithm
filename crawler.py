@@ -718,7 +718,8 @@ def crawl(seed_titles,
           max_pages,
           host=WIKI_HOST,
           delay_seconds=CRAWL_DELAY_SECONDS,
-          verbose=True):
+          verbose=True,
+          progress_cb=None):
     """Breadth-first crawl from the seed pages, up to max_pages (FR1.5, FR1.7).
 
     Args:
@@ -727,6 +728,7 @@ def crawl(seed_titles,
         host:          site to crawl. Defaults to en.wikipedia.org.
         delay_seconds: pause between requests, for politeness (NFR7).
         verbose:       print one progress line per page (FR6.2).
+        progress_cb:   optional callback invoked with progress dict on each step.
 
     Returns:
         (edges, pages) where
@@ -778,6 +780,17 @@ def crawl(seed_titles,
 
         if html is None:
             failure_count += 1
+            if progress_cb is not None:
+                try:
+                    progress_cb({
+                        "title": title,
+                        "fetched": len(pages),
+                        "max_pages": max_pages,
+                        "queued": len(queue) - read_head,
+                        "status": "failed",
+                    })
+                except Exception:
+                    pass
             continue
 
         # Drop self-links. Wikipedia's own header links an article back to
@@ -798,6 +811,18 @@ def crawl(seed_titles,
             print("  [{0:>4}/{1}] {2}  ({3} links, queue {4})"
                   .format(len(pages), max_pages, title, len(outgoing),
                           len(queue) - read_head))
+
+        if progress_cb is not None:
+            try:
+                progress_cb({
+                    "title": title,
+                    "fetched": len(pages),
+                    "max_pages": max_pages,
+                    "queued": len(queue) - read_head,
+                    "status": "fetched",
+                })
+            except Exception:
+                pass
 
         # Sleep AFTER the fetch, and only on success, so a page we skipped
         # instantly does not also cost us a second of wall-clock time.

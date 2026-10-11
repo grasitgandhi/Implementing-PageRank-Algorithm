@@ -1,4 +1,4 @@
-import { Search, Medal, Network, Info } from 'lucide-react';
+import { Globe, Search, Medal, Network } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
 import { useAppStore } from '../store/useAppStore';
 import type { TabId } from '../types';
@@ -8,10 +8,10 @@ import type { TabId } from '../types';
    ═══════════════════════════════════════════════════ */
 
 const navTabs: { id: TabId; label: string; icon: React.ElementType }[] = [
+  { id: 'crawl',     label: 'Crawl',     icon: Globe },
   { id: 'search',    label: 'Search',    icon: Search },
   { id: 'top-pages', label: 'Top Pages', icon: Medal },
   { id: 'graph',     label: 'Graph',     icon: Network },
-  { id: 'about',     label: 'About',     icon: Info },
 ];
 
 export default function Navbar() {
