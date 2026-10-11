@@ -1,31 +1,29 @@
 import { X, ExternalLink } from 'lucide-react';
+import { mockPages } from '../mockData';
 import { useAppStore } from '../store/useAppStore';
 
 /* ═══════════════════════════════════════════════════
    NodeDetailsPanel — Details for a selected graph node
    Shows PageRank, in-links, out-links and source URL
-   Connected to the real backend data
    ═══════════════════════════════════════════════════ */
 
 export default function NodeDetailsPanel() {
   const selectedNode = useAppStore((s) => s.selectedNode);
   const setSelectedNode = useAppStore((s) => s.setSelectedNode);
-  const detail = useAppStore((s) => s.selectedNodeDetail);
 
   if (!selectedNode) return null;
 
-  const title = detail?.title || selectedNode.replace(/_/g, ' ');
-  const url = detail?.url || `https://en.wikipedia.org/wiki/${selectedNode}`;
-  const pagerank = detail?.pagerank ?? 0;
-  const rank = detail?.rank ?? 0;
-  const inLinks = detail?.inLinks || [];
-  const outLinks = detail?.outLinks || [];
-  const inDegree = detail?.inDegree ?? inLinks.length;
-  const outDegree = detail?.outDegree ?? outLinks.length;
+  const page = mockPages.find((p) => p.id === selectedNode);
+  if (!page) return null;
+
+  // Rank among all pages by pagerank
+  const sorted = [...mockPages].sort((a, b) => b.pagerank - a.pagerank);
+  const rank = sorted.findIndex((p) => p.id === page.id) + 1;
+
+  const wikiUrl = `https://en.wikipedia.org/wiki/${page.title.replace(/ /g, '_')}`;
 
   return (
     <div
-      id="node-details-panel"
       className="
         rounded-2xl border border-[var(--border)]
         bg-[var(--card)] shadow-card
@@ -37,10 +35,10 @@ export default function NodeDetailsPanel() {
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1 min-w-0">
           <h3 className="text-sm font-bold text-[var(--text-primary)] truncate">
-            {title}
+            {page.title}
           </h3>
           <a
-            href={url}
+            href={wikiUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="
@@ -50,7 +48,7 @@ export default function NodeDetailsPanel() {
             "
           >
             <ExternalLink size={10} className="flex-shrink-0" />
-            <span className="truncate">{url.replace('https://', '')}</span>
+            <span className="truncate">en.wikipedia.org/wiki/{page.title.replace(/ /g, '_')}</span>
           </a>
         </div>
         <button
@@ -69,10 +67,10 @@ export default function NodeDetailsPanel() {
       </div>
 
       {/* ── Stats ── */}
-      <div className="grid grid-cols-4 gap-2 mb-4">
+      <div className="grid grid-cols-3 gap-3 mb-4">
         <div
           className="
-            rounded-xl p-2.5
+            rounded-xl p-3
             bg-[var(--bg)] border border-[var(--border)]
             text-center
           "
@@ -80,13 +78,13 @@ export default function NodeDetailsPanel() {
           <p className="text-[10px] text-[var(--text-muted)] font-semibold uppercase tracking-wider mb-0.5">
             PageRank
           </p>
-          <p className="text-sm font-bold gradient-text">
-            {pagerank.toFixed(4)}
+          <p className="text-base font-bold gradient-text">
+            {page.pagerank.toFixed(3)}
           </p>
         </div>
         <div
           className="
-            rounded-xl p-2.5
+            rounded-xl p-3
             bg-[var(--bg)] border border-[var(--border)]
             text-center
           "
@@ -94,36 +92,22 @@ export default function NodeDetailsPanel() {
           <p className="text-[10px] text-[var(--text-muted)] font-semibold uppercase tracking-wider mb-0.5">
             Rank
           </p>
-          <p className="text-sm font-bold text-[var(--text-primary)]">
-            {rank > 0 ? `#${rank}` : '—'}
+          <p className="text-base font-bold text-[var(--text-primary)]">
+            #{rank}
           </p>
         </div>
         <div
           className="
-            rounded-xl p-2.5
+            rounded-xl p-3
             bg-[var(--bg)] border border-[var(--border)]
             text-center
           "
         >
           <p className="text-[10px] text-[var(--text-muted)] font-semibold uppercase tracking-wider mb-0.5">
-            In-deg
+            In-degree
           </p>
-          <p className="text-sm font-bold text-[var(--text-primary)]">
-            {inDegree}
-          </p>
-        </div>
-        <div
-          className="
-            rounded-xl p-2.5
-            bg-[var(--bg)] border border-[var(--border)]
-            text-center
-          "
-        >
-          <p className="text-[10px] text-[var(--text-muted)] font-semibold uppercase tracking-wider mb-0.5">
-            Out-deg
-          </p>
-          <p className="text-sm font-bold text-[var(--text-primary)]">
-            {outDegree}
+          <p className="text-base font-bold text-[var(--text-primary)]">
+            {page.inLinks.length}
           </p>
         </div>
       </div>
@@ -131,45 +115,35 @@ export default function NodeDetailsPanel() {
       {/* ── In-links ── */}
       <div className="mb-4">
         <h4 className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2">
-          In-links ({inLinks.length})
+          In-links (Top 5)
         </h4>
-        {inLinks.length === 0 ? (
-          <p className="text-[11px] text-[var(--text-muted)] italic">No in-links recorded</p>
-        ) : (
-          <ol className="list-decimal list-inside space-y-1 max-h-32 overflow-y-auto">
-            {inLinks.slice(0, 10).map((linkId, i) => (
-              <li
-                key={i}
-                onClick={() => setSelectedNode(linkId)}
-                className="text-[12px] text-[var(--text-primary)] truncate cursor-pointer hover:text-[var(--accent-start)]"
-              >
-                <span className="text-[var(--text-secondary)]">{linkId.replace(/_/g, ' ')}</span>
-              </li>
-            ))}
-          </ol>
-        )}
+        <ol className="list-decimal list-inside space-y-1">
+          {page.inLinks.slice(0, 5).map((title, i) => (
+            <li
+              key={i}
+              className="text-[12px] text-[var(--text-primary)] truncate"
+            >
+              <span className="text-[var(--text-secondary)]">{title}</span>
+            </li>
+          ))}
+        </ol>
       </div>
 
       {/* ── Out-links ── */}
       <div>
         <h4 className="text-[11px] font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2">
-          Out-links ({outLinks.length})
+          Out-links (Top 5)
         </h4>
-        {outLinks.length === 0 ? (
-          <p className="text-[11px] text-[var(--text-muted)] italic">No out-links (dangling page)</p>
-        ) : (
-          <ol className="list-decimal list-inside space-y-1 max-h-32 overflow-y-auto">
-            {outLinks.slice(0, 10).map((linkId, i) => (
-              <li
-                key={i}
-                onClick={() => setSelectedNode(linkId)}
-                className="text-[12px] text-[var(--text-primary)] truncate cursor-pointer hover:text-[var(--accent-start)]"
-              >
-                <span className="text-[var(--text-secondary)]">{linkId.replace(/_/g, ' ')}</span>
-              </li>
-            ))}
-          </ol>
-        )}
+        <ol className="list-decimal list-inside space-y-1">
+          {page.outLinks.slice(0, 5).map((title, i) => (
+            <li
+              key={i}
+              className="text-[12px] text-[var(--text-primary)] truncate"
+            >
+              <span className="text-[var(--text-secondary)]">{title}</span>
+            </li>
+          ))}
+        </ol>
       </div>
     </div>
   );

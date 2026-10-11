@@ -1,10 +1,11 @@
-import { ExternalLink, ChevronRight, Loader2 } from 'lucide-react';
+import { useMemo } from 'react';
+import { ExternalLink, ChevronRight } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
+import { computeResults } from './SearchPanel';
 import ScoreBar from './ScoreBar';
 
 /* ═══════════════════════════════════════════════════
    ResultsTable — Top-10 search results with score bars
-   Uses real search results from zustand store
    ═══════════════════════════════════════════════════ */
 
 export default function ResultsTable() {
@@ -13,14 +14,11 @@ export default function ResultsTable() {
   const showBreakdown = useAppStore((s) => s.showBreakdown);
   const showCosine = useAppStore((s) => s.showCosine);
   const setSelectedNode = useAppStore((s) => s.setSelectedNode);
-  const results = useAppStore((s) => s.results);
-  const searchLoading = useAppStore((s) => s.searchLoading);
-  const searchExecuted = useAppStore((s) => s.searchExecuted);
-  const status = useAppStore((s) => s.status);
 
-  if (!status?.crawled) {
-    return null;
-  }
+  const results = useMemo(
+    () => computeResults(query, alpha),
+    [query, alpha],
+  );
 
   return (
     <div
@@ -37,10 +35,10 @@ export default function ResultsTable() {
         <h3 className="text-[14px] font-bold text-[var(--text-primary)]">
           Search Results{' '}
           <span className="text-[var(--text-muted)] font-normal">
-            ({results.length > 0 ? `Top ${results.length}` : '0 results'})
+            (Top 10)
           </span>
         </h3>
-        {query && searchExecuted && (
+        {query && (
           <span className="text-[11px] text-[var(--text-muted)] tabular-nums">
             Alpha: <span className="font-semibold gradient-text">{alpha.toFixed(2)}</span>
             {' · '}
@@ -59,116 +57,86 @@ export default function ResultsTable() {
         </div>
       )}
 
-      {/* ── Loading state ── */}
-      {searchLoading && (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <Loader2 size={24} className="animate-spin text-[var(--accent-start)] mb-3" />
-          <p className="text-[13px] text-[var(--text-muted)]">
-            Executing TF-IDF & PageRank fusion search…
-          </p>
-        </div>
-      )}
-
-      {/* ── Empty state (no query yet) ── */}
-      {!searchLoading && !searchExecuted && (
+      {/* ── Empty state ── */}
+      {results.length === 0 && (
         <div className="flex flex-col items-center justify-center py-12 text-center">
           <div className="w-12 h-12 rounded-2xl bg-accent-gradient flex items-center justify-center mb-4 shadow-glow animate-glow-pulse">
             <span className="text-white text-xl">🔍</span>
           </div>
           <p className="text-[13px] text-[var(--text-muted)] max-w-xs">
-            Enter a search query above and press Search or hit Enter.
-          </p>
-        </div>
-      )}
-
-      {/* ── Empty state (query executed, no match) ── */}
-      {!searchLoading && searchExecuted && results.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-12 text-center">
-          <div className="w-12 h-12 rounded-2xl bg-accent-gradient flex items-center justify-center mb-4 shadow-glow">
-            <span className="text-white text-xl">∅</span>
-          </div>
-          <p className="text-[13px] text-[var(--text-muted)] max-w-xs">
-            No pages match &ldquo;{query}&rdquo;. Try another keyword.
+            {query
+              ? 'No pages match your query. Try a different search term.'
+              : 'Enter a search query above to see ranked results.'}
           </p>
         </div>
       )}
 
       {/* ── Result rows ── */}
-      {!searchLoading && (
-        <div className="flex flex-col gap-1.5">
-          {results.map((r, idx) => (
-            <button
-              key={r.page_id}
-              id={`result-row-${r.page_id}`}
-              onClick={() => setSelectedNode(r.page_id)}
-              className="
-                flex items-start gap-3 p-3 rounded-xl
-                border border-transparent
-                hover:bg-[var(--card-hover)] hover:border-[var(--border)]
-                cursor-pointer transition-all duration-200
-                text-left w-full group
-              "
-            >
-              {/* Rank */}
-              <span className="
-                text-[12px] font-bold tabular-nums
-                text-[var(--text-muted)] mt-0.5
-                w-5 shrink-0 text-center
-              ">
-                {idx + 1}
+      <div className="flex flex-col gap-1.5">
+        {results.map((r, idx) => (
+          <button
+            key={r.page.id}
+            id={`result-row-${r.page.id}`}
+            onClick={() => setSelectedNode(r.page.id)}
+            className="
+              flex items-start gap-3 p-3 rounded-xl
+              border border-transparent
+              hover:bg-[var(--card-hover)] hover:border-[var(--border)]
+              cursor-pointer transition-all duration-200
+              text-left w-full group
+            "
+          >
+            {/* Rank */}
+            <span className="
+              text-[12px] font-bold tabular-nums
+              text-[var(--text-muted)] mt-0.5
+              w-5 shrink-0 text-center
+            ">
+              {idx + 1}
+            </span>
+
+            {/* Info */}
+            <div className="flex-1 min-w-0">
+              {/* Title row */}
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <span className="text-[13px] font-semibold gradient-text truncate">
+                  {r.page.title}
+                </span>
+                <ExternalLink
+                  size={12}
+                  className="text-[var(--accent-start)] shrink-0 opacity-60 group-hover:opacity-100 transition-opacity"
+                />
+              </div>
+              <span className="text-[11px] text-[var(--text-muted)] truncate block">
+                {r.page.url}
               </span>
 
-              {/* Info */}
-              <div className="flex-1 min-w-0">
-                {/* Title row */}
-                <div className="flex items-center gap-1.5 mb-0.5">
-                  <span className="text-[13px] font-semibold gradient-text truncate">
-                    {r.title}
-                  </span>
-                  <a
-                    href={r.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    className="p-0.5"
-                  >
-                    <ExternalLink
-                      size={12}
-                      className="text-[var(--accent-start)] shrink-0 opacity-60 hover:opacity-100 transition-opacity"
-                    />
-                  </a>
+              {/* Score bars */}
+              {showBreakdown && (
+                <div className="mt-2 flex flex-col gap-1">
+                  <ScoreBar label="Relevance" value={r.page.relevance} color="orange" />
+                  <ScoreBar label="PageRank" value={r.page.pagerank} color="pink" />
+                  <ScoreBar label="Final" value={r.combinedScore} color="yellow" />
+                  {showCosine && (
+                    <ScoreBar label="Cosine" value={r.page.cosine} color="purple" />
+                  )}
                 </div>
-                <span className="text-[11px] text-[var(--text-muted)] truncate block">
-                  {r.url}
-                </span>
+              )}
+            </div>
 
-                {/* Score bars */}
-                {showBreakdown && (
-                  <div className="mt-2 flex flex-col gap-1">
-                    <ScoreBar label="Relevance" value={r.relevance} color="orange" />
-                    <ScoreBar label="PageRank" value={r.pagerank} color="pink" />
-                    <ScoreBar label="Final" value={r.final} color="yellow" />
-                    {showCosine && (
-                      <ScoreBar label="Cosine" value={r.cosine} color="purple" />
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Chevron */}
-              <ChevronRight
-                size={16}
-                className="
-                  text-[var(--text-muted)] mt-0.5 shrink-0
-                  opacity-40 group-hover:opacity-100
-                  group-hover:translate-x-0.5
-                  transition-all duration-200
-                "
-              />
-            </button>
-          ))}
-        </div>
-      )}
+            {/* Chevron */}
+            <ChevronRight
+              size={16}
+              className="
+                text-[var(--text-muted)] mt-0.5 shrink-0
+                opacity-40 group-hover:opacity-100
+                group-hover:translate-x-0.5
+                transition-all duration-200
+              "
+            />
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
