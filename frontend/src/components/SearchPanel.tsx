@@ -1,34 +1,11 @@
 import { useCallback } from 'react';
-import { Search } from 'lucide-react';
+import { Search, Loader2, ArrowRight, AlertTriangle } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
-import { mockPages } from '../mockData';
-import { saveSearch } from '../api/storage';
-import type { SearchResult } from '../types';
 
 /* ═══════════════════════════════════════════════════
    SearchPanel — query input, alpha slider, display
-   checkboxes, and search button
+   checkboxes, and search execution
    ═══════════════════════════════════════════════════ */
-
-/** Compute search results using the scoring formula:
- *  final_score = alpha * relevance + (1 - alpha) * pagerank
- */
-export function computeResults(query: string, alpha: number): SearchResult[] {
-  if (!query.trim()) return [];
-
-  const q = query.toLowerCase();
-  const matched = mockPages.filter((p) =>
-    p.title.toLowerCase().includes(q)
-  );
-
-  return matched
-    .map((page) => ({
-      page,
-      combinedScore: alpha * page.relevance + (1 - alpha) * page.pagerank,
-    }))
-    .sort((a, b) => b.combinedScore - a.combinedScore)
-    .slice(0, 10);
-}
 
 export default function SearchPanel() {
   const query = useAppStore((s) => s.query);
@@ -39,18 +16,67 @@ export default function SearchPanel() {
   const setShowBreakdown = useAppStore((s) => s.setShowBreakdown);
   const showCosine = useAppStore((s) => s.showCosine);
   const setShowCosine = useAppStore((s) => s.setShowCosine);
+  const setTab = useAppStore((s) => s.setTab);
 
-  /** Called when the search button is clicked */
+  const status = useAppStore((s) => s.status);
+  const isBackendOffline = useAppStore((s) => s.isBackendOffline);
+  const searchLoading = useAppStore((s) => s.searchLoading);
+  const searchError = useAppStore((s) => s.searchError);
+  const performSearch = useAppStore((s) => s.performSearch);
+
+  const isCrawled = status?.crawled ?? false;
+
   const handleSearch = useCallback(() => {
-    const results = computeResults(query, alpha);
-    // Fire-and-forget save to the Flask bridge
-    saveSearch({
-      query,
-      alpha,
-      timestamp: new Date().toISOString(),
-      results,
-    });
-  }, [query, alpha]);
+    if (!query.trim() || !isCrawled) return;
+    performSearch();
+  }, [query, isCrawled, performSearch]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSearch();
+    }
+  };
+
+  // ── First-run gating: Not crawled yet ──
+  if (!isCrawled && !isBackendOffline) {
+    return (
+      <div
+        id="search-panel"
+        className="
+          rounded-2xl border border-[var(--border)]
+          bg-[var(--card)] shadow-card
+          p-6 animate-fade-in transition-theme
+          flex flex-col items-center justify-center text-center
+          py-10
+        "
+      >
+        <div className="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mb-3 text-amber-500">
+          <AlertTriangle size={24} />
+        </div>
+        <h3 className="text-base font-bold text-[var(--text-primary)] mb-1">
+          Crawl some pages first
+        </h3>
+        <p className="text-[12px] text-[var(--text-muted)] max-w-sm mb-5 leading-relaxed">
+          The search index and PageRank authority scores require crawled web data.
+          Run a crawl from seed pages to generate <code className="px-1.5 py-0.5 rounded bg-[var(--bg)] font-mono text-[11px]">edges.txt</code> and <code className="px-1.5 py-0.5 rounded bg-[var(--bg)] font-mono text-[11px]">pages.db</code>.
+        </p>
+        <button
+          id="btn-goto-crawl"
+          onClick={() => setTab('crawl')}
+          className="
+            flex items-center gap-2 px-5 py-2.5 rounded-xl
+            bg-accent-gradient text-white text-[13px] font-semibold
+            shadow-glow cursor-pointer hover:brightness-110 active:scale-[0.98]
+            transition-all
+          "
+        >
+          <span>Go to Crawl Tab</span>
+          <ArrowRight size={15} />
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -73,9 +99,11 @@ export default function SearchPanel() {
           <input
             id="search-input"
             type="text"
+            disabled={!isCrawled || searchLoading}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search pages..."
+            onKeyDown={handleKeyDown}
+            placeholder="Search crawled pages..."
             className="
               w-full pl-9 pr-4 py-2.5
               rounded-xl border border-[var(--border)]
@@ -83,7 +111,7 @@ export default function SearchPanel() {
               text-[13px] placeholder:text-[var(--text-muted)]
               focus:outline-none focus:border-[var(--accent-start)]
               focus:ring-2 focus:ring-[var(--accent-glow)]
-              transition-all duration-200
+              disabled:opacity-50 transition-all duration-200
             "
           />
         </div>
@@ -92,17 +120,25 @@ export default function SearchPanel() {
         <button
           id="search-btn"
           onClick={handleSearch}
+          disabled={!query.trim() || !isCrawled || searchLoading}
           className="
-            px-5 py-2.5 rounded-xl
-            bg-accent-gradient
-            text-white text-[13px] font-semibold
+            flex items-center gap-2 px-5 py-2.5 rounded-xl
+            bg-accent-gradient text-white text-[13px] font-semibold
             shadow-glow cursor-pointer
             hover:brightness-110 active:scale-[0.97]
+            disabled:opacity-50 disabled:cursor-not-allowed
             transition-all duration-200
             shrink-0
           "
         >
-          Search
+          {searchLoading ? (
+            <>
+              <Loader2 size={15} className="animate-spin" />
+              <span>Searching...</span>
+            </>
+          ) : (
+            <span>Search</span>
+          )}
         </button>
       </div>
 
@@ -129,6 +165,11 @@ export default function SearchPanel() {
           onChange={(e) => setAlpha(parseFloat(e.target.value))}
           className="alpha-range w-full"
         />
+        <div className="flex justify-between text-[10px] text-[var(--text-muted)] mt-1">
+          <span>0.00 (Pure PageRank)</span>
+          <span className="font-medium text-[var(--text-secondary)]">final = α·relevance + (1-α)·PageRank</span>
+          <span>1.00 (Pure Relevance)</span>
+        </div>
       </div>
 
       {/* ── Checkboxes ── */}
@@ -155,10 +196,17 @@ export default function SearchPanel() {
             className="accent-[var(--accent-start)] w-3.5 h-3.5 rounded cursor-pointer"
           />
           <span className="text-[12px] text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors">
-            Show raw cosine
+            Show cosine score
           </span>
         </label>
       </div>
+
+      {/* Error message */}
+      {searchError && (
+        <div className="mt-3 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-[12px]">
+          {searchError}
+        </div>
+      )}
     </div>
   );
 }

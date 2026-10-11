@@ -5,146 +5,100 @@ import {
   Maximize2,
   Minimize2,
   Network,
+  Loader2,
 } from 'lucide-react';
 import * as d3 from 'd3';
-import { mockPages, mockLinks } from '../mockData';
 import { useAppStore } from '../store/useAppStore';
-import type { Page } from '../types';
+import type { GraphNode as ApiGraphNode, GraphLink as ApiGraphLink } from '../types';
 import NodeDetailsPanel from './NodeDetailsPanel';
 
 /* ═══════════════════════════════════════════════════
    LinkGraphPanel — Force-directed graph visualization
    Uses d3-force on an SVG with zoom controls,
    layout modes, and node size/color by PageRank tier
+   Connected to real crawled data
    ═══════════════════════════════════════════════════ */
 
-/* ── Graph data helpers ── */
-
-interface GraphNode extends d3.SimulationNodeDatum {
+interface SimNode extends d3.SimulationNodeDatum {
   id: string;
   title: string;
   pagerank: number;
+  rank: number;
   inLinks: string[];
   outLinks: string[];
-  page: Page;
 }
 
-interface GraphLink extends d3.SimulationLinkDatum<GraphNode> {
-  source: string | GraphNode;
-  target: string | GraphNode;
+interface SimLink extends d3.SimulationLinkDatum<SimNode> {
+  source: string | SimNode;
+  target: string | SimNode;
 }
 
-// Top 30 pages by PageRank
-const top30 = [...mockPages]
-  .sort((a, b) => b.pagerank - a.pagerank)
-  .slice(0, 30);
-
-const top30Titles = new Set(top30.map((p) => p.title));
-
-function buildGraphData(): { nodes: GraphNode[]; links: GraphLink[] } {
-  const nodes: GraphNode[] = top30.map((p) => ({
-    id: p.id,
-    title: p.title,
-    pagerank: p.pagerank,
-    inLinks: p.inLinks,
-    outLinks: p.outLinks,
-    page: p,
-  }));
-
-  const nodeById = new Map(nodes.map((n) => [n.title, n]));
-
-  const links: GraphLink[] = mockLinks
-    .filter(
-      (l) =>
-        top30Titles.has(l.source as string) &&
-        top30Titles.has(l.target as string)
-    )
-    .map((l) => ({
-      source: nodeById.get(l.source as string)!.id,
-      target: nodeById.get(l.target as string)!.id,
-    }));
-
-  return { nodes, links };
-}
-
-/* ── Color tiers ── */
-function nodeColor(page: Page, sortedPages: Page[]): string {
-  const idx = sortedPages.findIndex((p) => p.id === page.id);
-  if (idx < 3) return '#f97316'; // orange — top 3
-  if (idx < 7) return '#ec4899'; // pink — mid
-  return '#6b7280'; // gray — low
-}
-
-/* ── Radius helpers ── */
-function radiusByPagerank(pr: number): number {
-  // Scale from 8px to 28px based on pagerank
-  const min = 8,
-    max = 28;
-  const maxPR = Math.max(...top30.map((p) => p.pagerank));
-  const minPR = Math.min(...top30.map((p) => p.pagerank));
-  if (maxPR === minPR) return (min + max) / 2;
-  return min + ((pr - minPR) / (maxPR - minPR)) * (max - min);
-}
-
-function radiusByInDegree(inLinks: string[]): number {
-  const min = 8,
-    max = 28;
-  const maxDeg = Math.max(...top30.map((p) => p.inLinks.length));
-  const minDeg = Math.min(...top30.map((p) => p.inLinks.length));
-  if (maxDeg === minDeg) return (min + max) / 2;
-  return min + ((inLinks.length - minDeg) / (maxDeg - minDeg)) * (max - min);
-}
-
-/* ── Component ── */
 export default function LinkGraphPanel() {
   const vs = useAppStore((s) => s.visualSettings);
   const selectedNode = useAppStore((s) => s.selectedNode);
   const setSelectedNode = useAppStore((s) => s.setSelectedNode);
+  const graphData = useAppStore((s) => s.graphData);
+  const graphLoading = useAppStore((s) => s.graphLoading);
+  const loadGraph = useAppStore((s) => s.loadGraph);
+  const status = useAppStore((s) => s.status);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const simRef = useRef<d3.Simulation<GraphNode, GraphLink> | null>(null);
+  const simRef = useRef<d3.Simulation<SimNode, SimLink> | null>(null);
 
   const [zoom, setZoom] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [graphTab, setGraphTab] = useState<'graph' | 'details'>('graph');
 
-  // Sort pages once for color assignment
-  const sortedPages = useMemo(
-    () => [...mockPages].sort((a, b) => b.pagerank - a.pagerank),
-    []
-  );
+  // Load graph if crawled
+  useEffect(() => {
+    if (status?.crawled && !graphData && !graphLoading) {
+      loadGraph(30);
+    }
+  }, [status?.crawled, graphData, graphLoading, loadGraph]);
 
-  // Graph data — stable reference
-  const graphData = useMemo(() => buildGraphData(), []);
+  const rawNodes = graphData?.nodes || [];
+  const rawLinks = graphData?.links || [];
 
-  /* ── Determine node radius ── */
+  // Color tiers
+  const nodeColor = useCallback((node: SimNode) => {
+    if (node.rank <= 3) return '#f97316'; // orange — top 3
+    if (node.rank <= 7) return '#ec4899'; // pink — mid
+    return '#6b7280'; // gray — low
+  }, []);
+
+  // Radius helpers
+  const maxPR = useMemo(() => Math.max(...rawNodes.map((n) => n.pagerank), 0.001), [rawNodes]);
+  const minPR = useMemo(() => Math.min(...rawNodes.map((n) => n.pagerank), 0), [rawNodes]);
+  const maxDeg = useMemo(() => Math.max(...rawNodes.map((n) => n.inLinks.length), 1), [rawNodes]);
+  const minDeg = useMemo(() => Math.min(...rawNodes.map((n) => n.inLinks.length), 0), [rawNodes]);
+
   const getRadius = useCallback(
-    (node: GraphNode) => {
+    (node: SimNode) => {
+      const min = 8;
+      const max = 28;
       if (vs.nodeSize === 'uniform') return 14;
-      if (vs.nodeSize === 'in-degree') return radiusByInDegree(node.inLinks);
-      return radiusByPagerank(node.pagerank);
+      if (vs.nodeSize === 'in-degree') {
+        const deg = node.inLinks.length;
+        if (maxDeg === minDeg) return (min + max) / 2;
+        return min + ((deg - minDeg) / (maxDeg - minDeg)) * (max - min);
+      }
+      if (maxPR === minPR) return (min + max) / 2;
+      return min + ((node.pagerank - minPR) / (maxPR - minPR)) * (max - min);
     },
-    [vs.nodeSize]
+    [vs.nodeSize, maxPR, minPR, maxDeg, minDeg]
   );
 
-  /* ── Determine if node gets a label ── */
   const showLabelFor = useCallback(
-    (node: GraphNode) => {
+    (node: SimNode) => {
       if (!vs.showLabels) return false;
-      const idx = sortedPages.findIndex((p) => p.id === node.id);
-      return idx < 6;
+      return node.rank <= 6;
     },
-    [vs.showLabels, sortedPages]
+    [vs.showLabels]
   );
 
-  /* ── Position computers for non-force layouts ── */
   const computeCircularPositions = useCallback(
-    (
-      nodes: GraphNode[],
-      width: number,
-      height: number
-    ): { x: number; y: number }[] => {
+    (nodes: SimNode[], width: number, height: number): { x: number; y: number }[] => {
       const cx = width / 2;
       const cy = height / 2;
       const radius = Math.min(width, height) * 0.38;
@@ -160,13 +114,8 @@ export default function LinkGraphPanel() {
   );
 
   const computeHierarchicalPositions = useCallback(
-    (
-      nodes: GraphNode[],
-      width: number,
-      height: number
-    ): { x: number; y: number }[] => {
-      // Three tiers: top-3, mid (3-7), rest
-      const tiers: GraphNode[][] = [[], [], []];
+    (nodes: SimNode[], width: number, height: number): { x: number; y: number }[] => {
+      const tiers: SimNode[][] = [[], [], []];
       const sorted = [...nodes].sort((a, b) => b.pagerank - a.pagerank);
       sorted.forEach((n, i) => {
         if (i < 3) tiers[0].push(n);
@@ -197,18 +146,15 @@ export default function LinkGraphPanel() {
   useEffect(() => {
     const svg = svgRef.current;
     const container = containerRef.current;
-    if (!svg || !container) return;
+    if (!svg || !container || rawNodes.length === 0) return;
 
     const width = container.clientWidth;
     const height = container.clientHeight || 480;
 
-    // Clear previous
     const svgSel = d3.select(svg);
     svgSel.selectAll('*').remove();
-
     svgSel.attr('viewBox', `0 0 ${width} ${height}`);
 
-    // ── Defs: arrow marker ──
     const defs = svgSel.append('defs');
     defs
       .append('marker')
@@ -223,18 +169,22 @@ export default function LinkGraphPanel() {
       .attr('d', 'M0,0 L10,3.5 L0,7 Z')
       .attr('fill', 'var(--text-muted)');
 
-    const g = svgSel
-      .append('g')
-      .attr('class', 'graph-layer');
+    const g = svgSel.append('g').attr('class', 'graph-layer');
 
-    // Deep-copy nodes/links so d3 mutation doesn't corrupt source
-    const nodes: GraphNode[] = graphData.nodes.map((n) => ({ ...n }));
-    const links: GraphLink[] = graphData.links.map((l) => ({
-      source: l.source as string,
-      target: l.target as string,
+    const nodes: SimNode[] = rawNodes.map((n) => ({
+      id: n.id,
+      title: n.title,
+      pagerank: n.pagerank,
+      rank: n.rank,
+      inLinks: n.inLinks,
+      outLinks: n.outLinks,
     }));
 
-    // ── Links ──
+    const links: SimLink[] = rawLinks.map((l) => ({
+      source: l.source,
+      target: l.target,
+    }));
+
     const linkSel = g
       .append('g')
       .attr('class', 'links')
@@ -242,26 +192,24 @@ export default function LinkGraphPanel() {
       .data(links)
       .join('line')
       .attr('stroke', 'var(--text-muted)')
-      .attr('stroke-opacity', 0.25)
+      .attr('stroke-opacity', vs.linkOpacity ?? 0.25)
       .attr('stroke-width', 1)
       .attr('marker-end', 'url(#arrowhead)');
 
-    // ── Nodes ──
     const nodeSel = g
       .append('g')
       .attr('class', 'nodes')
-      .selectAll<SVGCircleElement, GraphNode>('circle')
+      .selectAll<SVGCircleElement, SimNode>('circle')
       .data(nodes, (d) => d.id)
       .join('circle')
       .attr('r', (d) => getRadius(d))
-      .attr('fill', (d) => nodeColor(d.page, sortedPages))
+      .attr('fill', (d) => nodeColor(d))
       .attr('stroke', 'var(--card)')
       .attr('stroke-width', 2)
       .attr('cursor', 'pointer')
       .attr('opacity', 0.9)
       .on('click', (_, d) => {
         setSelectedNode(d.id);
-        // On narrow screens, switch to details tab
         if (window.innerWidth < 1400) {
           setGraphTab('details');
         }
@@ -273,11 +221,10 @@ export default function LinkGraphPanel() {
         d3.select(this).attr('opacity', 0.9).attr('stroke-width', 2);
       });
 
-    // ── Labels ──
     const labelSel = g
       .append('g')
       .attr('class', 'labels')
-      .selectAll<SVGTextElement, GraphNode>('text')
+      .selectAll<SVGTextElement, SimNode>('text')
       .data(nodes.filter((n) => showLabelFor(n)), (d) => d.id)
       .join('text')
       .text((d) => d.title)
@@ -287,30 +234,27 @@ export default function LinkGraphPanel() {
       .attr('text-anchor', 'middle')
       .attr('pointer-events', 'none');
 
-    // ── Apply layout ──
     const applyPositions = (animate: boolean) => {
       if (vs.layout === 'force-directed') {
-        // d3 forceSimulation
         if (simRef.current) simRef.current.stop();
 
         const sim = d3
-          .forceSimulation<GraphNode>(nodes)
+          .forceSimulation<SimNode>(nodes)
           .force(
             'link',
             d3
-              .forceLink<GraphNode, GraphLink>(links)
+              .forceLink<SimNode, SimLink>(links)
               .id((d) => d.id)
-              .distance(120)
+              .distance(vs.linkDistance || 120)
           )
-          .force('charge', d3.forceManyBody<GraphNode>().strength(-300))
+          .force('charge', d3.forceManyBody<SimNode>().strength(vs.chargeStrength || -300))
           .force('center', d3.forceCenter(width / 2, height / 2))
-          .force('collision', d3.forceCollide<GraphNode>().radius((d) => getRadius(d) + 4))
+          .force('collision', d3.forceCollide<SimNode>().radius((d) => getRadius(d) + 4))
           .on('tick', () => {
             linkSel
               .attr('x1', (d: any) => d.source.x)
               .attr('y1', (d: any) => d.source.y)
               .attr('x2', (d: any) => {
-                // Shorten line by target radius so arrow sits at circle edge
                 const dx = d.target.x - d.source.x;
                 const dy = d.target.y - d.source.y;
                 const dist = Math.sqrt(dx * dx + dy * dy);
@@ -333,7 +277,6 @@ export default function LinkGraphPanel() {
 
         simRef.current = sim;
       } else {
-        // Static layouts
         if (simRef.current) {
           simRef.current.stop();
           simRef.current = null;
@@ -349,7 +292,6 @@ export default function LinkGraphPanel() {
           n.y = positions[i].y;
         });
 
-        // Build a lookup for positioned nodes
         const nodeMap = new Map(nodes.map((n) => [n.id, n]));
 
         if (animate && vs.animateOnUpdate) {
@@ -385,7 +327,8 @@ export default function LinkGraphPanel() {
               const dx = t.x! - s.x!;
               const dy = t.y! - s.y!;
               const dist = Math.sqrt(dx * dx + dy * dy);
-              const r = getRadius(nodes.find((n) => n.id === tId)!);
+              const targetNode = nodes.find((n) => n.id === tId);
+              const r = targetNode ? getRadius(targetNode) : 10;
               return dist > 0 ? t.x! - (dx / dist) * r : t.x!;
             })
             .attr('y2', (d: any) => {
@@ -397,11 +340,11 @@ export default function LinkGraphPanel() {
               const dx = t.x! - s.x!;
               const dy = t.y! - s.y!;
               const dist = Math.sqrt(dx * dx + dy * dy);
-              const r = getRadius(nodes.find((n) => n.id === tId)!);
+              const targetNode = nodes.find((n) => n.id === tId);
+              const r = targetNode ? getRadius(targetNode) : 10;
               return dist > 0 ? t.y! - (dy / dist) * r : t.y!;
             });
         } else {
-          // Snap immediately
           nodeSel
             .attr('cx', (d) => nodeMap.get(d.id)!.x!)
             .attr('cy', (d) => nodeMap.get(d.id)!.y!);
@@ -428,7 +371,8 @@ export default function LinkGraphPanel() {
               const dx = t.x! - s.x!;
               const dy = t.y! - s.y!;
               const dist = Math.sqrt(dx * dx + dy * dy);
-              const r = getRadius(nodes.find((n) => n.id === tId)!);
+              const targetNode = nodes.find((n) => n.id === tId);
+              const r = targetNode ? getRadius(targetNode) : 10;
               return dist > 0 ? t.x! - (dx / dist) * r : t.x!;
             })
             .attr('y2', (d: any) => {
@@ -440,7 +384,8 @@ export default function LinkGraphPanel() {
               const dx = t.x! - s.x!;
               const dy = t.y! - s.y!;
               const dist = Math.sqrt(dx * dx + dy * dy);
-              const r = getRadius(nodes.find((n) => n.id === tId)!);
+              const targetNode = nodes.find((n) => n.id === tId);
+              const r = targetNode ? getRadius(targetNode) : 10;
               return dist > 0 ? t.y! - (dy / dist) * r : t.y!;
             });
         }
@@ -449,7 +394,6 @@ export default function LinkGraphPanel() {
 
     applyPositions(true);
 
-    // Cleanup
     return () => {
       if (simRef.current) {
         simRef.current.stop();
@@ -461,34 +405,32 @@ export default function LinkGraphPanel() {
     vs.nodeSize,
     vs.showLabels,
     vs.animateOnUpdate,
+    vs.linkOpacity,
+    vs.chargeStrength,
+    vs.linkDistance,
     getRadius,
     showLabelFor,
-    graphData,
-    sortedPages,
+    rawNodes,
+    rawLinks,
+    nodeColor,
     setSelectedNode,
     computeCircularPositions,
     computeHierarchicalPositions,
   ]);
 
-  /* ── Zoom transform ── */
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg) return;
     const gLayer = svg.querySelector('.graph-layer');
     if (gLayer) {
-      (gLayer as SVGGElement).setAttribute(
-        'transform',
-        `scale(${zoom})`
-      );
+      (gLayer as SVGGElement).setAttribute('transform', `scale(${zoom})`);
     }
   }, [zoom]);
 
-  /* ── Zoom handlers ── */
   const handleZoomIn = () => setZoom((z) => Math.min(z + 0.15, 3));
   const handleZoomOut = () => setZoom((z) => Math.max(z - 0.15, 0.3));
   const toggleFullscreen = () => setIsFullscreen((f) => !f);
 
-  /* ── Wide layout detection ── */
   const [isWide, setIsWide] = useState(
     typeof window !== 'undefined' ? window.innerWidth >= 1400 : false
   );
@@ -500,14 +442,12 @@ export default function LinkGraphPanel() {
     return () => mql.removeEventListener('change', handler);
   }, []);
 
-  /* ── Legend items ── */
   const legendItems = [
     { color: '#f97316', label: 'High PR' },
     { color: '#ec4899', label: 'Medium PR' },
     { color: '#6b7280', label: 'Low PR' },
   ];
 
-  /* ── Render ── */
   const fullscreenClasses = isFullscreen
     ? 'fixed inset-0 z-[100] bg-[var(--bg)] p-4'
     : '';
@@ -515,9 +455,7 @@ export default function LinkGraphPanel() {
   return (
     <div className={fullscreenClasses}>
       <div className="flex gap-5 h-full">
-        {/* ── Main graph area ── */}
         <div className={`flex-1 flex flex-col min-w-0 ${isFullscreen ? '' : ''}`}>
-          {/* Tabs (narrow: graph / details toggle) */}
           {!isWide && selectedNode && (
             <div className="flex gap-1 mb-3">
               <button
@@ -551,7 +489,6 @@ export default function LinkGraphPanel() {
             </div>
           )}
 
-          {/* Show graph or details based on tab (narrow) */}
           {(!selectedNode || isWide || graphTab === 'graph') && (
             <div
               className={`
@@ -561,7 +498,6 @@ export default function LinkGraphPanel() {
                 ${isFullscreen ? 'flex-1' : ''}
               `}
             >
-              {/* ── Card header ── */}
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2.5">
                   <div
@@ -584,7 +520,6 @@ export default function LinkGraphPanel() {
                   </div>
                 </div>
 
-                {/* Legend */}
                 <div className="hidden sm:flex items-center gap-4">
                   {legendItems.map((item) => (
                     <div key={item.label} className="flex items-center gap-1.5">
@@ -613,21 +548,35 @@ export default function LinkGraphPanel() {
                   relative rounded-xl overflow-hidden
                   bg-[var(--bg)] border border-[var(--border)]
                   ${isFullscreen ? 'flex-1' : 'h-[480px]'}
+                  flex items-center justify-center
                 `}
               >
+                {graphLoading && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-[var(--bg)]/80 z-10">
+                    <Loader2 size={24} className="animate-spin text-[var(--accent-start)] mb-2" />
+                    <span className="text-[12px] text-[var(--text-muted)]">Loading graph snapshot...</span>
+                  </div>
+                )}
+
+                {!graphLoading && !status?.crawled && (
+                  <div className="text-center p-6 text-[12px] text-[var(--text-muted)]">
+                    No graph data available. Crawl pages first to view the link graph.
+                  </div>
+                )}
+
+                {!graphLoading && status?.crawled && rawNodes.length === 0 && (
+                  <div className="text-center p-6 text-[12px] text-[var(--text-muted)]">
+                    Graph is empty or failed to load.
+                  </div>
+                )}
+
                 <svg
                   ref={svgRef}
                   className="w-full h-full"
                   style={{ overflow: 'visible' }}
                 />
 
-                {/* ── Zoom controls ── */}
-                <div
-                  className="
-                    absolute bottom-3 right-3
-                    flex flex-col gap-1
-                  "
-                >
+                <div className="absolute bottom-3 right-3 flex flex-col gap-1">
                   <button
                     onClick={handleZoomIn}
                     className="
@@ -635,8 +584,7 @@ export default function LinkGraphPanel() {
                       bg-[var(--card)] border border-[var(--border)]
                       text-[var(--text-secondary)]
                       hover:bg-[var(--card-hover)]
-                      transition-colors cursor-pointer
-                      shadow-sm
+                      transition-colors cursor-pointer shadow-sm
                     "
                     aria-label="Zoom in"
                   >
@@ -649,8 +597,7 @@ export default function LinkGraphPanel() {
                       bg-[var(--card)] border border-[var(--border)]
                       text-[var(--text-secondary)]
                       hover:bg-[var(--card-hover)]
-                      transition-colors cursor-pointer
-                      shadow-sm
+                      transition-colors cursor-pointer shadow-sm
                     "
                     aria-label="Zoom out"
                   >
@@ -663,8 +610,7 @@ export default function LinkGraphPanel() {
                       bg-[var(--card)] border border-[var(--border)]
                       text-[var(--text-secondary)]
                       hover:bg-[var(--card-hover)]
-                      transition-colors cursor-pointer
-                      shadow-sm
+                      transition-colors cursor-pointer shadow-sm
                     "
                     aria-label="Toggle fullscreen"
                   >
@@ -679,13 +625,11 @@ export default function LinkGraphPanel() {
             </div>
           )}
 
-          {/* Narrow: show NodeDetails as tab content */}
           {!isWide && selectedNode && graphTab === 'details' && (
             <NodeDetailsPanel />
           )}
         </div>
 
-        {/* ── Side-by-side NodeDetails (wide only) ── */}
         {isWide && selectedNode && (
           <div className="w-[320px] flex-shrink-0">
             <NodeDetailsPanel />
