@@ -48,4 +48,4 @@ export interface VisualSettings {
 }
 
 /** Navigation tabs */
-export type TabId = 'search' | 'top-pages' | 'graph' | 'about';
+export type TabId = 'search' | 'top-pages' | 'graph';

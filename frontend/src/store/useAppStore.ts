@@ -10,6 +10,10 @@ interface AppState {
   activeTab: TabId;
   setTab: (tab: TabId) => void;
 
+  // Sidebar
+  sidebarCollapsed: boolean;
+  toggleSidebar: () => void;
+
   // Theme
   theme: 'light' | 'dark';
   setTheme: (theme: 'light' | 'dark') => void;
@@ -61,6 +65,9 @@ const defaultVisualSettings: VisualSettings = {
 export const useAppStore = create<AppState>((set) => ({
   activeTab: 'search',
   setTab: (tab) => set({ activeTab: tab }),
+
+  sidebarCollapsed: false,
+  toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
 
   theme: getInitialTheme(),
   setTheme: (theme) => {
