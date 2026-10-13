@@ -334,6 +334,17 @@ def cosine_similarity(vector_a, vector_b):
 # The demo below sweeps alpha so the effect of changing it is visible.
 DEFAULT_ALPHA = 0.5
 
+# A page only counts as "matching" if its raw cosine similarity clears BOTH bars:
+#   - MIN_RELEVANCE: an absolute floor. Below this the overlap is a stray shared
+#     word (e.g. one mention of "2026"), not a real topical match.
+#   - RELEVANCE_FLOOR: a fraction of the best match's score, so a page has to be
+#     in the same league as the top result to be listed at all.
+# Without this, any page sharing a single token with the query (similarity of
+# 0.00003, printed as 0.0000) was kept and could ride its PageRank into the
+# results.
+MIN_RELEVANCE = 0.005
+RELEVANCE_FLOOR = 0.10
+
 
 def normalise(scores):
     """Scale a dict of scores so the largest becomes 1.0.
@@ -460,7 +471,15 @@ class SearchEngine:
         if not raw_relevance:
             return []
 
-        relevance = normalise(raw_relevance)
+        # Keep the RAW cosine similarity so the number shown is the true match
+        # strength, but drop weak matches: they are noise, not results.
+        best = max(raw_relevance.values())
+        cutoff = max(MIN_RELEVANCE, RELEVANCE_FLOOR * best)
+        relevance = {page_id: score for page_id, score in raw_relevance.items()
+                     if score >= cutoff}
+
+        if not relevance:
+            return []
 
         results = []
         for page_id, relevance_score in relevance.items():
