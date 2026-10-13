@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
+import CrawlPanel from './components/CrawlPanel';
 import SearchPanel from './components/SearchPanel';
 import ResultsTable from './components/ResultsTable';
 import LinkGraphPanel from './components/LinkGraphPanel';
@@ -19,6 +20,7 @@ export default function App() {
   const theme = useAppStore((s) => s.theme);
   const activeTab = useAppStore((s) => s.activeTab);
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
+  const refreshStatus = useAppStore((s) => s.refreshStatus);
 
   // Apply theme class to <html> on mount and when theme changes
   useEffect(() => {
@@ -29,6 +31,11 @@ export default function App() {
       root.classList.remove('dark');
     }
   }, [theme]);
+
+  // Check initial backend and crawl pipeline status on mount
+  useEffect(() => {
+    refreshStatus();
+  }, [refreshStatus]);
 
   return (
     <div className="min-h-screen bg-[var(--bg)] transition-theme">
@@ -48,6 +55,8 @@ export default function App() {
         <div className="flex flex-col xl:flex-row gap-5 h-full">
           {/* ═══ Center column — Search / Tab content ═══ */}
           <div className="flex-1 flex flex-col gap-5 min-w-0 xl:max-w-[55%]">
+            {activeTab === 'crawl' && <CrawlPanel />}
+
             {activeTab === 'search' && (
               <>
                 <SearchPanel />
@@ -59,7 +68,6 @@ export default function App() {
             {activeTab === 'graph' && <LinkGraphPanel />}
 
             {activeTab === 'top-pages' && <TopPagesPanel />}
-
           </div>
 
           {/* ═══ Right column — Graph + Visual Settings ═══ */}
@@ -72,6 +80,14 @@ export default function App() {
             {activeTab === 'search' && (
               <>
                 <LinkGraphPanel />
+                <VisualSettingsPanel />
+              </>
+            )}
+
+            {activeTab === 'crawl' && (
+              <>
+                <LinkGraphPanel />
+                <TopPagesPanel />
                 <VisualSettingsPanel />
               </>
             )}
@@ -89,7 +105,6 @@ export default function App() {
                 <VisualSettingsPanel />
               </>
             )}
-
           </div>
         </div>
       </main>

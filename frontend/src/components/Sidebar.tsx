@@ -1,4 +1,4 @@
-import { Search, Medal, Network, Sparkles, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Globe, Search, Medal, Network, Sparkles, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import type { TabId } from '../types';
 
@@ -9,6 +9,7 @@ import type { TabId } from '../types';
    ═══════════════════════════════════════════════════ */
 
 const sidebarItems: { id: TabId; label: string; icon: React.ElementType }[] = [
+  { id: 'crawl',     label: 'Crawl',     icon: Globe },
   { id: 'search',    label: 'Search',    icon: Search },
   { id: 'top-pages', label: 'Top Pages', icon: Medal },
   { id: 'graph',     label: 'Graph',     icon: Network },
@@ -146,19 +147,17 @@ export default function Sidebar() {
         )}
 
         {/* Collapsed version: just the icon */}
-        {(collapsed || true) && (
-          <div
-            className={`
-              items-center justify-center
-              w-12 h-12 mx-auto rounded-xl
-              bg-accent-gradient
-              shadow-glow
-              ${collapsed ? 'flex' : 'flex lg:hidden'}
-            `}
-          >
-            <Sparkles size={18} className="text-white" />
-          </div>
-        )}
+        <div
+          className={`
+            items-center justify-center
+            w-12 h-12 mx-auto rounded-xl
+            bg-accent-gradient
+            shadow-glow
+            ${collapsed ? 'flex' : 'flex lg:hidden'}
+          `}
+        >
+          <Sparkles size={18} className="text-white" />
+        </div>
       </div>
     </aside>
   );

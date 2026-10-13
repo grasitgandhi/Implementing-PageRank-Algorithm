@@ -1,34 +1,12 @@
-import { useCallback } from 'react';
-import { Search } from 'lucide-react';
+import { KeyboardEvent } from 'react';
+import { Search, Loader2, AlertCircle, Globe, RefreshCw } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
-import { mockPages } from '../mockData';
-import { saveSearch } from '../api/storage';
-import type { SearchResult } from '../types';
 
 /* ═══════════════════════════════════════════════════
-   SearchPanel — query input, alpha slider, display
-   checkboxes, and search button
+   SearchPanel — Query input, alpha slider, display
+   checkboxes, and search button.
+   Wires directly to GET /api/search (no keystroke search).
    ═══════════════════════════════════════════════════ */
-
-/** Compute search results using the scoring formula:
- *  final_score = alpha * relevance + (1 - alpha) * pagerank
- */
-export function computeResults(query: string, alpha: number): SearchResult[] {
-  if (!query.trim()) return [];
-
-  const q = query.toLowerCase();
-  const matched = mockPages.filter((p) =>
-    p.title.toLowerCase().includes(q)
-  );
-
-  return matched
-    .map((page) => ({
-      page,
-      combinedScore: alpha * page.relevance + (1 - alpha) * page.pagerank,
-    }))
-    .sort((a, b) => b.combinedScore - a.combinedScore)
-    .slice(0, 10);
-}
 
 export default function SearchPanel() {
   const query = useAppStore((s) => s.query);
@@ -40,17 +18,25 @@ export default function SearchPanel() {
   const showCosine = useAppStore((s) => s.showCosine);
   const setShowCosine = useAppStore((s) => s.setShowCosine);
 
-  /** Called when the search button is clicked */
-  const handleSearch = useCallback(() => {
-    const results = computeResults(query, alpha);
-    // Fire-and-forget save to the Flask bridge
-    saveSearch({
-      query,
-      alpha,
-      timestamp: new Date().toISOString(),
-      results,
-    });
-  }, [query, alpha]);
+  const performSearch = useAppStore((s) => s.performSearch);
+  const searchLoading = useAppStore((s) => s.searchLoading);
+  const searchError = useAppStore((s) => s.searchError);
+  const backendOffline = useAppStore((s) => s.backendOffline);
+  const pipelineStatus = useAppStore((s) => s.pipelineStatus);
+  const setTab = useAppStore((s) => s.setTab);
+
+  const isCrawled = pipelineStatus?.crawled ?? false;
+
+  const handleSearch = () => {
+    if (!isCrawled || searchLoading) return;
+    performSearch(query, alpha);
+  };
+
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleSearch();
+    }
+  };
 
   return (
     <div
@@ -58,10 +44,46 @@ export default function SearchPanel() {
       className="
         rounded-2xl border border-[var(--border)]
         bg-[var(--card)] shadow-card
-        p-5 animate-fade-in transition-theme
+        p-5 animate-fade-in transition-theme flex flex-col gap-4
       "
     >
-      {/* ── Search row ── */}
+      {/* ── Offline Banner ── */}
+      {backendOffline && (
+        <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-500 text-[12px] flex items-center gap-2">
+          <AlertCircle size={15} className="shrink-0" />
+          <span>Backend server is offline (http://localhost:5000). Start with: <code className="font-mono">python server.py</code></span>
+        </div>
+      )}
+
+      {/* ── First-Run Gating: Not Crawled Notice ── */}
+      {!isCrawled && !backendOffline && (
+        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-500 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
+            <Globe size={18} className="shrink-0" />
+            <div>
+              <p className="text-[13px] font-semibold text-[var(--text-primary)]">
+                No crawled data yet
+              </p>
+              <p className="text-[11px] text-[var(--text-muted)]">
+                Crawl some web pages first to build the index and link graph.
+              </p>
+            </div>
+          </div>
+          <button
+            id="gate-crawl-btn"
+            onClick={() => setTab('crawl')}
+            className="
+              px-3.5 py-1.5 rounded-lg bg-accent-gradient text-white
+              text-[12px] font-semibold shadow-glow hover:brightness-110
+              transition-all shrink-0 cursor-pointer
+            "
+          >
+            Go to Crawl
+          </button>
+        </div>
+      )}
+
+      {/* ── Search Input Row ── */}
       <div className="flex items-center gap-3">
         {/* Input with icon */}
         <div className="flex-1 relative">
@@ -74,8 +96,10 @@ export default function SearchPanel() {
             id="search-input"
             type="text"
             value={query}
+            disabled={!isCrawled || searchLoading}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search pages..."
+            onKeyDown={handleKeyDown}
+            placeholder={isCrawled ? 'Search crawled pages (e.g. pagerank algorithm)...' : 'Crawl pages first to enable search...'}
             className="
               w-full pl-9 pr-4 py-2.5
               rounded-xl border border-[var(--border)]
@@ -83,6 +107,7 @@ export default function SearchPanel() {
               text-[13px] placeholder:text-[var(--text-muted)]
               focus:outline-none focus:border-[var(--accent-start)]
               focus:ring-2 focus:ring-[var(--accent-glow)]
+              disabled:opacity-50 disabled:cursor-not-allowed
               transition-all duration-200
             "
           />
@@ -92,28 +117,37 @@ export default function SearchPanel() {
         <button
           id="search-btn"
           onClick={handleSearch}
+          disabled={!isCrawled || searchLoading}
           className="
             px-5 py-2.5 rounded-xl
             bg-accent-gradient
             text-white text-[13px] font-semibold
             shadow-glow cursor-pointer
             hover:brightness-110 active:scale-[0.97]
+            disabled:opacity-50 disabled:cursor-not-allowed
             transition-all duration-200
-            shrink-0
+            shrink-0 flex items-center gap-2
           "
         >
-          Search
+          {searchLoading ? (
+            <>
+              <Loader2 size={15} className="animate-spin" />
+              Searching...
+            </>
+          ) : (
+            'Search'
+          )}
         </button>
       </div>
 
       {/* ── Alpha slider ── */}
-      <div className="mt-4">
+      <div>
         <div className="flex items-center justify-between mb-1.5">
           <label
             htmlFor="alpha-slider"
             className="text-[12px] font-semibold text-[var(--text-secondary)]"
           >
-            Alpha (relevance vs PageRank)
+            Alpha blend (relevance vs PageRank)
           </label>
           <span className="text-[12px] font-bold tabular-nums gradient-text">
             {alpha.toFixed(2)}
@@ -126,13 +160,19 @@ export default function SearchPanel() {
           max={1}
           step={0.01}
           value={alpha}
+          disabled={!isCrawled}
           onChange={(e) => setAlpha(parseFloat(e.target.value))}
-          className="alpha-range w-full"
+          className="alpha-range w-full disabled:opacity-50"
         />
+        <div className="flex justify-between text-[10px] text-[var(--text-muted)] mt-1">
+          <span>0.00 (100% PageRank Authority)</span>
+          <span>0.50 (Balanced Fusion)</span>
+          <span>1.00 (100% TF-IDF Relevance)</span>
+        </div>
       </div>
 
       {/* ── Checkboxes ── */}
-      <div className="mt-3 flex items-center gap-5">
+      <div className="flex items-center gap-5 pt-1">
         <label className="flex items-center gap-2 cursor-pointer group">
           <input
             id="chk-breakdown"

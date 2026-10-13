@@ -62,6 +62,7 @@ import crawler
 import graph_model
 import page_store
 import pagerank_engine
+import pipeline
 import search_engine
 
 
@@ -170,33 +171,29 @@ def command_crawl(arguments):
     print("  this takes several minutes -- roughly a second per page, plus the")
     print("  download itself. Progress follows.\n")
 
-    edges, pages = crawler.crawl(seed_titles, arguments.max_pages, verbose=True)
+    summary = pipeline.crawl_and_store(
+        seed_titles,
+        arguments.max_pages,
+        edges_path=arguments.edges,
+        db_path=arguments.db,
+        verbose=True,
+    )
 
-    if not pages:
+    if not summary or summary["pages"] == 0:
         print("\nerror: the crawl fetched no pages at all.")
         print("       Check your internet connection and try again.")
         sys.exit(1)
 
     # ---- edges.txt, for ranking ------------------------------------------
-    crawler.write_edges_file(edges, arguments.edges)
-    print("\nWrote {0} edges to {1}".format(len(edges), arguments.edges))
+    print("\nWrote {0} edges to {1}".format(summary["edges"], arguments.edges))
 
     # ---- pages.db, for searching ------------------------------------------
-    # The out-degree is read off the graph rather than recounted from the raw
-    # links, so the number stored matches the graph PageRank actually ranks.
-    graph = graph_model.build_graph(edges)
-    store = page_store.SimplePageStore(arguments.db, reset=True)
-
-    for title, text in pages.items():
-        store.insert(title, title.replace("_", " "),
-                     graph_model.out_degree(graph, title), text)
-
-    print("Wrote {0} page records to {1}".format(store.count(), arguments.db))
+    print("Wrote {0} page records to {1}".format(summary["pages"], arguments.db))
 
     print("\nCrawl complete:")
-    print("  pages fetched : {0}".format(len(pages)))
-    print("  edges kept    : {0}".format(len(edges)))
-    print("  dangling pages: {0}".format(len(graph_model.find_dangling_pages(graph))))
+    print("  pages fetched : {0}".format(summary["pages"]))
+    print("  edges kept    : {0}".format(summary["edges"]))
+    print("  dangling pages: {0}".format(summary["dangling"]))
     print("\nNext: python cli.py rank")
 
 
