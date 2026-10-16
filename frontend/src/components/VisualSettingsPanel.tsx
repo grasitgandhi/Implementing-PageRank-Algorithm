@@ -2,8 +2,9 @@ import { Settings2 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 
 /* ═══════════════════════════════════════════════════
-   VisualSettingsPanel — Controls for graph display
-   Node size, layout, labels, and animation toggles
+   VisualSettingsPanel — Controls for graph display (P5 reachable)
+   Node size, layout, labels, charge strength, link distance, and opacity.
+   All values persist in localStorage under pagerank-ui-visual-settings (B9).
    ═══════════════════════════════════════════════════ */
 
 export default function VisualSettingsPanel() {
@@ -12,27 +13,32 @@ export default function VisualSettingsPanel() {
 
   return (
     <div
+      id="visual-settings-panel"
       className="
         rounded-2xl border border-[var(--border)]
         bg-[var(--card)] shadow-card
-        p-5 animate-slide-in
+        p-5 animate-slide-in transition-theme
       "
     >
       {/* ── Header ── */}
-      <div className="flex items-center gap-2.5 mb-5">
+      <div className="flex items-center gap-2.5 mb-5 border-b border-[var(--border)] pb-3">
         <div
+          aria-hidden="true"
           className="
-            w-8 h-8 rounded-lg
+            w-8 h-8 rounded-xl
             bg-accent-gradient
             flex items-center justify-center
-            shadow-glow
+            shadow-glow text-white shrink-0
           "
         >
-          <Settings2 size={16} className="text-white" />
+          <Settings2 size={16} />
         </div>
-        <h3 className="text-sm font-bold text-[var(--text-primary)]">
-          Visual Settings
-        </h3>
+        <div>
+          <h3 className="text-[14px] font-bold text-[var(--text-primary)]">Visual Settings</h3>
+          <p className="text-[12px] text-[var(--text-muted)]">
+            Graph physics and layout preferences
+          </p>
+        </div>
       </div>
 
       <div className="flex flex-col gap-4">
@@ -42,7 +48,7 @@ export default function VisualSettingsPanel() {
             htmlFor="vs-node-size"
             className="block text-[12px] font-semibold text-[var(--text-secondary)] mb-1.5"
           >
-            Node size
+            Node Sizing Metric
           </label>
           <select
             id="vs-node-size"
@@ -53,16 +59,17 @@ export default function VisualSettingsPanel() {
               })
             }
             className="
-              w-full rounded-lg px-3 py-2 text-[12px]
+              w-full rounded-xl px-3 py-2 text-[12px]
               bg-[var(--bg)] text-[var(--text-primary)]
               border border-[var(--border)]
-              focus:outline-none focus:border-[var(--tab-active-text)]
+              focus:outline-none focus:border-[var(--accent-start)]
+              focus:ring-2 focus:ring-[var(--accent-glow)]
               transition-colors cursor-pointer
             "
           >
-            <option value="pagerank">PageRank</option>
-            <option value="uniform">Uniform</option>
-            <option value="in-degree">In-degree</option>
+            <option value="pagerank">PageRank Authority</option>
+            <option value="uniform">Uniform Radius</option>
+            <option value="in-degree">In-Degree Count</option>
           </select>
         </div>
 
@@ -72,69 +79,101 @@ export default function VisualSettingsPanel() {
             htmlFor="vs-layout"
             className="block text-[12px] font-semibold text-[var(--text-secondary)] mb-1.5"
           >
-            Layout
+            Graph Layout Geometry
           </label>
           <select
             id="vs-layout"
             value={vs.layout}
             onChange={(e) =>
               setVS({
-                layout: e.target.value as
-                  | 'force-directed'
-                  | 'circular'
-                  | 'hierarchical',
+                layout: e.target.value as 'force-directed' | 'circular' | 'hierarchical',
               })
             }
             className="
-              w-full rounded-lg px-3 py-2 text-[12px]
+              w-full rounded-xl px-3 py-2 text-[12px]
               bg-[var(--bg)] text-[var(--text-primary)]
               border border-[var(--border)]
-              focus:outline-none focus:border-[var(--tab-active-text)]
+              focus:outline-none focus:border-[var(--accent-start)]
+              focus:ring-2 focus:ring-[var(--accent-glow)]
               transition-colors cursor-pointer
             "
           >
-            <option value="force-directed">Force-directed</option>
-            <option value="circular">Circular</option>
-            <option value="hierarchical">Hierarchical</option>
+            <option value="force-directed">Force-directed (D3 Physics)</option>
+            <option value="circular">Circular Perimeter</option>
+            <option value="hierarchical">Hierarchical Ranked Layers</option>
           </select>
         </div>
 
-        {/* ── Checkboxes ── */}
-        <label className="flex items-center gap-2.5 cursor-pointer group">
+        {/* ── Charge Strength Slider ── */}
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label
+              htmlFor="vs-charge-strength"
+              className="text-[12px] font-semibold text-[var(--text-secondary)]"
+            >
+              Repulsion Force (Charge)
+            </label>
+            <span className="text-[12px] font-mono tabular-nums text-[var(--text-muted)]">
+              {vs.chargeStrength}
+            </span>
+          </div>
           <input
-            type="checkbox"
-            checked={vs.showLabels}
-            onChange={(e) => setVS({ showLabels: e.target.checked })}
-            className="
-              w-4 h-4 rounded
-              border-[var(--border)]
-              text-[var(--tab-active-text)]
-              focus:ring-[var(--tab-active-text)]
-              cursor-pointer accent-[var(--accent-start)]
-            "
+            id="vs-charge-strength"
+            type="range"
+            min={-800}
+            max={-100}
+            step={25}
+            value={vs.chargeStrength}
+            onChange={(e) => setVS({ chargeStrength: parseInt(e.target.value, 10) })}
+            className="alpha-range w-full"
+            aria-label="Repulsion charge strength"
           />
-          <span className="text-[12px] font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors">
-            Show labels
-          </span>
-        </label>
+        </div>
 
-        <label className="flex items-center gap-2.5 cursor-pointer group">
+        {/* ── Link Distance Slider ── */}
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <label
+              htmlFor="vs-link-distance"
+              className="text-[12px] font-semibold text-[var(--text-secondary)]"
+            >
+              Link Distance
+            </label>
+            <span className="text-[12px] font-mono tabular-nums text-[var(--text-muted)]">
+              {vs.linkDistance}px
+            </span>
+          </div>
           <input
-            type="checkbox"
-            checked={vs.animateOnUpdate}
-            onChange={(e) => setVS({ animateOnUpdate: e.target.checked })}
-            className="
-              w-4 h-4 rounded
-              border-[var(--border)]
-              text-[var(--tab-active-text)]
-              focus:ring-[var(--tab-active-text)]
-              cursor-pointer accent-[var(--accent-start)]
-            "
+            id="vs-link-distance"
+            type="range"
+            min={50}
+            max={250}
+            step={10}
+            value={vs.linkDistance}
+            onChange={(e) => setVS({ linkDistance: parseInt(e.target.value, 10) })}
+            className="alpha-range w-full"
+            aria-label="Graph link distance"
           />
-          <span className="text-[12px] font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors">
-            Animate on update
-          </span>
-        </label>
+        </div>
+
+        {/* ── Checkboxes ── */}
+        <div className="flex flex-col gap-2.5 pt-1">
+          <label className="flex items-center gap-2.5 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={vs.showLabels}
+              onChange={(e) => setVS({ showLabels: e.target.checked })}
+              className="
+                w-4 h-4 rounded
+                border-[var(--border)]
+                cursor-pointer accent-[var(--accent-start)]
+              "
+            />
+            <span className="text-[12px] font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors">
+              Always show node labels
+            </span>
+          </label>
+        </div>
       </div>
     </div>
   );

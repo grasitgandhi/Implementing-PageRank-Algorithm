@@ -1,6 +1,7 @@
 /* ═══════════════════════════════════════════════════
    Shared TypeScript interfaces for PageRank Explorer
    Wires the UI to the real Python pipeline API.
+   Strict types without `any` (P7, P8 fixes).
    ═══════════════════════════════════════════════════ */
 
 /** A single page in the link graph */
@@ -8,13 +9,12 @@ export interface Page {
   id: string;
   title: string;
   url: string;
-  relevance?: number;     // 0–1: keyword/query relevance
-  pagerank: number;       // 0–1: PageRank score
-  cosine?: number;         // 0–1: cosine similarity
-  raw_cosine?: number;     // raw unscaled cosine similarity
-  inLinks: string[];      // titles/ids of pages linking TO this page
-  outLinks: string[];     // titles/ids of pages this page links TO
-  rank?: number;          // 1-indexed PageRank position
+  relevance?: number; // 0–1: keyword/query relevance
+  pagerank: number; // 0–1: PageRank score
+  raw_cosine?: number; // raw unscaled cosine similarity (single canonical field, P8)
+  inLinks: string[]; // titles/ids of pages linking TO this page
+  outLinks: string[]; // titles/ids of pages this page links TO
+  rank?: number; // 1-indexed PageRank position
 }
 
 /** A directed edge in the link graph */
@@ -28,10 +28,10 @@ export interface SearchResult {
   page_id: string;
   title: string;
   url: string;
-  final: number;          // formula: final = alpha * relevance + (1 - alpha) * pagerank
-  relevance: number;      // TF-IDF cosine relevance
-  pagerank: number;       // normalised PageRank authority
-  raw_cosine: number;     // unscaled raw cosine similarity
+  final: number; // formula: final = alpha * relevance + (1 - alpha) * pagerank
+  relevance: number; // TF-IDF cosine relevance
+  pagerank: number; // normalised PageRank authority
+  raw_cosine: number; // unscaled raw cosine similarity
   inLinks: string[];
   outLinks: string[];
   rank: number;
@@ -103,13 +103,13 @@ export interface VisualSettings {
   layout: 'force-directed' | 'circular' | 'hierarchical';
   animateOnUpdate: boolean;
   colorBy: 'pagerank' | 'relevance' | 'cosine';
-  linkOpacity: number;    // 0–1
+  linkOpacity: number; // 0–1
   chargeStrength: number; // d3 force charge (negative)
-  linkDistance: number;   // d3 force link distance
+  linkDistance: number; // d3 force link distance
 }
 
-/** Navigation tabs */
-export type TabId = 'crawl' | 'search' | 'top-pages' | 'graph';
+/** Navigation tabs including History panel (B1, B2) */
+export type TabId = 'crawl' | 'search' | 'graph' | 'history';
 
 /** Search history record */
 export interface SearchLogEntry {
@@ -117,5 +117,28 @@ export interface SearchLogEntry {
   alpha: number;
   timestamp: string;
   resultsCount?: number;
-  results?: any[];
+  results?: SearchResult[]; // Cleanly typed, zero any (P7, P8)
+}
+
+/** Derived popular query from history logs (B1) */
+export interface PopularQuery {
+  query: string;
+  count: number;
+  lastAlpha: number;
+}
+
+/** Typed API error kinds and payload (P3) */
+export type ApiErrorKind = 'not_crawled' | 'offline' | 'http' | 'parse' | 'aborted';
+
+export interface ApiErrorPayload {
+  kind: ApiErrorKind;
+  message: string;
+  status?: number;
+}
+
+/** Toast notifications (B5) */
+export interface ToastItem {
+  id: string;
+  type: 'success' | 'error' | 'info';
+  message: string;
 }

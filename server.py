@@ -37,6 +37,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import mimetypes
 import os
+import re
 import sys
 import threading
 import time
@@ -268,7 +269,7 @@ class PageRankRequestHandler(BaseHTTPRequestHandler):
         if isinstance(raw_seeds, list):
             seeds = [str(s).strip() for s in raw_seeds if str(s).strip()]
         elif isinstance(raw_seeds, str):
-            seeds = [s.strip() for s in raw_seeds.split(",") if s.strip()]
+            seeds = [s.strip() for s in re.split(r"[,;\n\r]+", raw_seeds) if s.strip()]
         else:
             seeds = []
 
@@ -287,7 +288,7 @@ class PageRankRequestHandler(BaseHTTPRequestHandler):
             self._send_json(400, {"error": "max_pages must be between 10 and 300"})
             return
 
-        force = bool(data.get("force", False))
+        force = bool(data.get("force", True))
 
         # 4. Check if a crawl already exists when force is False
         st = pipeline.get_pipeline_status()
@@ -300,41 +301,40 @@ class PageRankRequestHandler(BaseHTTPRequestHandler):
             })
             return
 
-        # 5. Launch background crawl thread
+        # 5. Initialize crawl status before starting background worker
+        crawl_status["state"] = "running"
+        crawl_status["fetched"] = 0
+        crawl_status["max_pages"] = max_pages
+        crawl_status["current"] = "Starting crawl..."
+        crawl_status["error"] = None
+
+        # 6. Launch background crawl thread
         def background_crawl_worker():
             with crawl_lock:
                 try:
-                    crawl_status["state"] = "running"
-                    crawl_status["fetched"] = 0
-                    crawl_status["max_pages"] = max_pages
-                    crawl_status["current"] = "Starting crawl..."
-                    crawl_status["error"] = None
-
                     def on_step(info):
                         crawl_status["fetched"] = info.get("fetched", 0)
                         crawl_status["max_pages"] = info.get("max_pages", max_pages)
                         crawl_status["current"] = info.get("title", "")
 
-                    pipeline.crawl_and_store(
+                    res = pipeline.crawl_and_store(
                         seeds=seeds,
                         max_pages=max_pages,
                         progress_cb=on_step,
                         verbose=False,
                     )
-                    crawl_status["state"] = "done"
-                    crawl_status["current"] = "Finished"
+                    if res.get("pages", 0) == 0:
+                        crawl_status["state"] = "error"
+                        crawl_status["error"] = "No pages could be fetched for seed(s): {0}. Please check that the Wikipedia article title exists.".format(", ".join(seeds))
+                    else:
+                        crawl_status["state"] = "done"
+                        crawl_status["current"] = "Finished"
                 except Exception as exc:
                     crawl_status["state"] = "error"
                     crawl_status["error"] = str(exc)
 
         worker_thread = threading.Thread(target=background_crawl_worker, daemon=True)
         worker_thread.start()
-
-        crawl_status["state"] = "running"
-        crawl_status["fetched"] = 0
-        crawl_status["max_pages"] = max_pages
-        crawl_status["current"] = "Initializing..."
-        crawl_status["error"] = None
 
         self._send_json(202, {
             "status": "started",
