@@ -69,9 +69,10 @@ def crawl_and_store(seeds,
         dict: summary with 'pages', 'edges', and 'dangling' counts.
     """
     if isinstance(seeds, str):
-        seed_titles = [s.strip() for s in seeds.split(",") if s.strip()]
+        import re
+        seed_titles = [s.strip() for s in re.split(r"[,;\n\r]+", seeds) if s.strip()]
     else:
-        seed_titles = [s.strip() for s in seeds if str(s).strip()]
+        seed_titles = [str(s).strip() for s in seeds if str(s).strip()]
 
     if not seed_titles:
         return {"pages": 0, "edges": 0, "dangling": 0}

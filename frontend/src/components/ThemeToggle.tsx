@@ -34,10 +34,7 @@ export default function ThemeToggle() {
         className={`
           absolute transition-all duration-300 ease-out
           text-amber-400
-          ${theme === 'dark'
-            ? 'opacity-100 rotate-0 scale-100'
-            : 'opacity-0 rotate-90 scale-50'
-          }
+          ${theme === 'dark' ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 rotate-90 scale-50'}
         `}
       />
 
@@ -47,21 +44,21 @@ export default function ThemeToggle() {
         className={`
           absolute transition-all duration-300 ease-out
           text-indigo-500
-          ${theme === 'light'
-            ? 'opacity-100 rotate-0 scale-100'
-            : 'opacity-0 -rotate-90 scale-50'
-          }
+          ${theme === 'light' ? 'opacity-100 rotate-0 scale-100' : 'opacity-0 -rotate-90 scale-50'}
         `}
       />
 
       {/* Hover glow ring */}
-      <span className="
+      <span
+        className="
         absolute inset-0 rounded-xl opacity-0
         group-hover:opacity-100
         transition-opacity duration-300
         bg-gradient-to-br from-[var(--accent-start)] to-[var(--accent-end)]
         blur-sm -z-10
-      " style={{ transform: 'scale(1.15)' }} />
+      "
+        style={{ transform: 'scale(1.15)' }}
+      />
     </button>
   );
 }

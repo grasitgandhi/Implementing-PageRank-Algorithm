@@ -692,19 +692,68 @@ def extract_visible_text(html):
     # search_engine.py splits on whitespace anyway, and a single-line string is
     # far easier to store in the one-record-per-line page_store format.
     return WHITESPACE_PATTERN.sub(" ", text).strip()
+def _unquote_title(s):
+    """Percent-decode a string without urllib to prevent double-encoding."""
+    res = bytearray()
+    i = 0
+    raw = s.encode("utf-8")
+    while i < len(raw):
+        if raw[i:i+1] == b"%" and i + 2 < len(raw):
+            try:
+                b = int(raw[i+1:i+3], 16)
+                res.append(b)
+                i += 3
+                continue
+            except ValueError:
+                pass
+        res.append(raw[i])
+        i += 1
+    return res.decode("utf-8", errors="replace")
+
+
 def normalize_title(raw_title):
-    """Turn a human-typed seed title into a valid Wikipedia path segment.
+    """Turn a human-typed seed title or full URL into a valid Wikipedia path segment.
 
-    Wikipedia uses underscores for spaces and percent-encodes anything
-    outside [A-Za-z0-9_.~-]. Without this, a seed like "Delhi protest"
-    puts a raw space in the HTTP request line, which is invalid HTTP, so
-    the server rejects it and the seed is skipped.
-
-    Only used on seeds typed by a person. Titles scraped from page HTML
-    are already encoded, so running them through this again would
-    double-encode them.
+    Handles:
+    - Raw article titles (e.g. 'Deep learning', 'quantum computing')
+    - Full Wikipedia URLs (e.g. 'https://en.wikipedia.org/wiki/Machine_learning')
+    - Pre-encoded or anchored URLs (e.g. '/wiki/Python_(programming_language)#History')
+    - Surrounding quotes or whitespace
     """
-    title = raw_title.strip().replace(" ", "_")
+    if not raw_title:
+        return ""
+
+    t = _unquote_title(str(raw_title).strip()).strip('\'"` ')
+
+    # Strip standard Wikipedia URL prefixes if user pasted a full URL
+    url_prefixes = (
+        "https://en.wikipedia.org/wiki/",
+        "http://en.wikipedia.org/wiki/",
+        "en.wikipedia.org/wiki/",
+        "https://wikipedia.org/wiki/",
+        "http://wikipedia.org/wiki/",
+        "wikipedia.org/wiki/",
+        "/wiki/",
+    )
+    for prefix in url_prefixes:
+        if t.lower().startswith(prefix):
+            t = t[len(prefix):]
+            break
+
+    # Strip anchor (#section) and query string (?...)
+    t = t.split("#")[0].split("?")[0].strip('\'"` /')
+
+    if not t:
+        return ""
+
+    # Wikipedia article titles capitalize the first letter
+    if t[0].islower():
+        t = t[0].upper() + t[1:]
+
+    # Wikipedia uses underscores for spaces
+    title = t.replace(" ", "_")
+
+    # Percent-encode characters outside [A-Za-z0-9_.~-()]
     encoded = []
     for ch in title:
         if ch.isascii() and (ch.isalnum() or ch in "_.~-()"):
@@ -713,6 +762,7 @@ def normalize_title(raw_title):
             for byte in ch.encode("utf-8"):
                 encoded.append("%{0:02X}".format(byte))
     return "".join(encoded)
+
 
 def crawl(seed_titles,
           max_pages,
@@ -756,7 +806,12 @@ def crawl(seed_titles,
     # of discovered titles. Advancing an index is O(1). collections.deque would
     # also solve this, but the project's declared standard-library allowance
     # covers only collections.Counter, and this costs one extra variable.
-    queue = [normalize_title(t) for t in seed_titles]
+    queue = []
+    for t in seed_titles:
+        norm = normalize_title(t)
+        if norm and norm not in queue:
+            queue.append(norm)
+
     read_head = 0
 
     # Queued-or-fetched titles. Checked before enqueueing AND before fetching so
