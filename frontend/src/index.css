@@ -1,0 +1,295 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ═══════════════════════════════════════════════════
+   THEME TOKENS — CSS Custom Properties
+   Strict WCAG AA contrast compliance (>= 4.5:1 on both page & card).
+   Spacing base 4px, unified radii, tabular numbers.
+   ═══════════════════════════════════════════════════ */
+
+:root {
+  /* ── Light theme (default) ── */
+  --bg: #f5f3ff;
+  --card: #ffffff;
+  --card-hover: #f9f7ff;
+  --border: #e5e1f5;
+  --border-hover: #d4cef0;
+
+  /* Contrast checked: #1a1625 on #ffffff is 16.5:1, on #f5f3ff is 15.2:1 */
+  --text-primary: #1a1625;
+  /* Contrast checked: #4a4560 on #ffffff is 7.2:1, on #f5f3ff is 6.6:1 */
+  --text-secondary: #4a4560;
+  /* Contrast checked: #6b6584 on #ffffff is 5.48:1, on #f5f3ff is 5.06:1 (Fixes P6) */
+  --text-muted: #6b6584;
+
+  --accent-start: #7c3aed;
+  --accent-mid: #db2777;
+  --accent-end: #3b82f6;
+  --accent-glow: rgba(124, 58, 237, 0.25);
+
+  --sidebar-bg: #ffffff;
+  --sidebar-hover: #f3f0ff;
+  --sidebar-active: #ede9fe;
+
+  --navbar-bg: rgba(255, 255, 255, 0.88);
+
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+
+  --tab-active-bg: #ede9fe;
+  --tab-active-text: #6d28d9;
+  --tab-inactive-text: #5b5574;
+  --tab-hover-bg: #f3f0ff;
+
+  --promo-bg: linear-gradient(135deg, #f3f0ff, #fce7f3);
+  --promo-icon-bg: linear-gradient(135deg, #7c3aed, #db2777);
+
+  --scrollbar-track: #f1f0f5;
+  --scrollbar-thumb: #d1cde0;
+
+  /* Radii */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 9999px;
+}
+
+.dark {
+  /* ── Dark theme ── */
+  --bg: #0b0a0f;
+  --card: #16131f;
+  --card-hover: #1e1a2a;
+  --border: #2a2538;
+  --border-hover: #3a3450;
+
+  /* Contrast checked: #f1f0f5 on #16131f is 16.1:1, on #0b0a0f is 17.2:1 */
+  --text-primary: #f1f0f5;
+  /* Contrast checked: #b5b0cb on #16131f is 8.3:1, on #0b0a0f is 8.9:1 */
+  --text-secondary: #b5b0cb;
+  /* Contrast checked: #9e98b5 on #16131f is 6.46:1, on #0b0a0f is 6.93:1 (Fixes P6) */
+  --text-muted: #9e98b5;
+
+  --accent-start: #f97316;
+  --accent-mid: #ef4444;
+  --accent-end: #ec4899;
+  --accent-glow: rgba(249, 115, 22, 0.3);
+
+  --sidebar-bg: #100e18;
+  --sidebar-hover: #1a1726;
+  --sidebar-active: #241f34;
+
+  --navbar-bg: rgba(11, 10, 15, 0.88);
+
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-card-hover: 0 4px 16px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.25);
+
+  --tab-active-bg: rgba(249, 115, 22, 0.15);
+  --tab-active-text: #fb923c;
+  --tab-inactive-text: #9e98b5;
+  --tab-hover-bg: rgba(249, 115, 22, 0.08);
+
+  --promo-bg: linear-gradient(135deg, #1a1528, #1f1420);
+  --promo-icon-bg: linear-gradient(135deg, #f97316, #ef4444);
+
+  --scrollbar-track: #100e18;
+  --scrollbar-thumb: #2a2538;
+}
+
+/* ═══════════════════════════════════════════════════
+   BASE STYLES & REDUCED MOTION (P6)
+   ═══════════════════════════════════════════════════ */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  font-family:
+    'Inter',
+    system-ui,
+    -apple-system,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  scroll-behavior: smooth;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text-primary);
+  transition:
+    background-color 0.25s ease,
+    color 0.25s ease;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Tabular numbers for all score displays */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Visible focus rings for keyboard accessibility (WCAG 2.4.7) */
+:focus-visible {
+  outline: 2px solid var(--accent-start);
+  outline-offset: 2px;
+}
+
+/* Screen reader only utility */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+/* ═══════════════════════════════════════════════════
+   PREFERS-REDUCED-MOTION (Fixes P6)
+   ═══════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   SCROLLBAR STYLING
+   ═══════════════════════════════════════════════════ */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-hover);
+}
+
+/* ═══════════════════════════════════════════════════
+   UTILITY CLASSES & DESIGN SYSTEM PRIMITIVES
+   ═══════════════════════════════════════════════════ */
+
+.glass-surface {
+  background: var(--navbar-bg);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+}
+
+.gradient-text {
+  background: linear-gradient(135deg, var(--accent-start), var(--accent-mid), var(--accent-end));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.transition-theme {
+  transition:
+    background-color 0.25s ease,
+    color 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+/* ═══════════════════════════════════════════════════
+   ALPHA RANGE SLIDER
+   ═══════════════════════════════════════════════════ */
+
+.alpha-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--border);
+  outline: none;
+  cursor: pointer;
+}
+
+/* Webkit — track */
+.alpha-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--border);
+}
+
+/* Webkit — thumb */
+.alpha-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, var(--accent-start), var(--accent-mid));
+  border: 2px solid var(--card);
+  box-shadow: 0 0 8px var(--accent-glow);
+  margin-top: -6px;
+  cursor: pointer;
+  transition:
+    box-shadow 0.2s ease,
+    transform 0.15s ease;
+}
+
+.alpha-range::-webkit-slider-thumb:hover {
+  box-shadow: 0 0 14px var(--accent-glow);
+  transform: scale(1.15);
+}
+
+/* Firefox — track */
+.alpha-range::-moz-range-track {
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--border);
+}
+
+/* Firefox — filled portion */
+.alpha-range::-moz-range-progress {
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, var(--accent-start), var(--accent-mid));
+}
+
+/* Firefox — thumb */
+.alpha-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, var(--accent-start), var(--accent-mid));
+  border: 2px solid var(--card);
+  box-shadow: 0 0 8px var(--accent-glow);
+  cursor: pointer;
+  transition:
+    box-shadow 0.2s ease,
+    transform 0.15s ease;
+}
+
+.alpha-range::-moz-range-thumb:hover {
+  box-shadow: 0 0 14px var(--accent-glow);
+  transform: scale(1.15);
+}
