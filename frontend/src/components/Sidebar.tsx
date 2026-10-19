@@ -45,54 +45,11 @@ export default function Sidebar() {
         overflow-hidden
       `}
     >
-      {/* ── Collapse / expand toggle ── */}
-      <div
-        className={`flex ${collapsed ? 'justify-center' : 'lg:justify-end justify-center'} px-2 pt-3`}
-      >
-        <button
-          id="sidebar-toggle"
-          onClick={toggleSidebar}
-          aria-label={collapsed ? 'Expand sidebar navigation' : 'Collapse sidebar navigation'}
-          aria-expanded={!collapsed}
-          className="
-            flex items-center justify-center
-            w-8 h-8 rounded-lg
-            text-[var(--text-muted)]
-            hover:bg-[var(--sidebar-hover)]
-            hover:text-[var(--text-secondary)]
-            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-start)]
-            transition-all duration-200
-            cursor-pointer
-          "
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {collapsed ? (
-            <PanelLeftOpen size={16} strokeWidth={2.2} aria-hidden="true" />
-          ) : (
-            <PanelLeftClose
-              size={16}
-              strokeWidth={2.2}
-              className="hidden lg:block"
-              aria-hidden="true"
-            />
-          )}
-          {/* On small screens show expand icon when not collapsed */}
-          {!collapsed && (
-            <PanelLeftOpen
-              size={16}
-              strokeWidth={2.2}
-              className="block lg:hidden"
-              aria-hidden="true"
-            />
-          )}
-        </button>
-      </div>
-
       {/* ── Navigation items with role="tablist" ── */}
       <nav
         role="tablist"
         aria-label="Sidebar Views"
-        className="flex-1 flex flex-col gap-1 p-2 pt-2"
+        className="flex-1 flex flex-col gap-1 p-2 pt-4"
       >
         {sidebarItems.map(({ id, label, icon: Icon }) => {
           const isActive = activeTab === id;
@@ -149,7 +106,7 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* ── Promo card at bottom ── */}
+      {/* ── Promo / collapse area at bottom ── */}
       <div className="p-2 pb-4">
         {!collapsed && (
           <div
@@ -184,19 +141,54 @@ export default function Sidebar() {
           </div>
         )}
 
-        {/* Collapsed version: icon */}
-        <div
-          aria-hidden="true"
+        {/* Collapsed or small-screen: gradient icon slot doubles as expand toggle */}
+        <button
+          id={collapsed ? 'sidebar-toggle' : 'sidebar-toggle-icon'}
+          type="button"
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={collapsed ? 'Expand sidebar navigation' : 'Collapse sidebar navigation'}
+          aria-expanded={!collapsed}
+          onClick={toggleSidebar}
           className={`
             items-center justify-center
-            w-10 h-10 mx-auto rounded-xl
+            w-12 h-12 mx-auto rounded-xl
             bg-accent-gradient
-            shadow-glow
+            shadow-glow cursor-pointer
+            transition-all duration-200 hover:brightness-110
+            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-start)]
             ${collapsed ? 'flex' : 'flex lg:hidden'}
           `}
         >
-          <Sparkles size={16} className="text-white" />
-        </div>
+          {collapsed ? (
+            <PanelLeftOpen size={18} className="text-white" strokeWidth={2.2} aria-hidden="true" />
+          ) : (
+            <Sparkles size={18} className="text-white" aria-hidden="true" />
+          )}
+        </button>
+
+        {/* Wide expanded: subtle text collapse row, only visible on lg+ */}
+        {!collapsed && (
+          <button
+            id="sidebar-toggle"
+            type="button"
+            onClick={toggleSidebar}
+            aria-label="Collapse sidebar navigation"
+            aria-expanded={true}
+            className="
+              hidden lg:flex items-center justify-center
+              w-full mt-2 py-1.5 rounded-xl
+              text-[var(--text-muted)] text-[11px] gap-1.5
+              hover:bg-[var(--sidebar-hover)]
+              hover:text-[var(--text-secondary)]
+              focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-start)]
+              transition-all duration-200 cursor-pointer
+            "
+            title="Collapse sidebar"
+          >
+            <PanelLeftClose size={13} strokeWidth={2.2} aria-hidden="true" />
+            <span>Collapse</span>
+          </button>
+        )}
       </div>
     </aside>
   );

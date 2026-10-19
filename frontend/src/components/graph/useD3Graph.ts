@@ -11,6 +11,7 @@ import { zoom as d3Zoom, zoomIdentity, type ZoomBehavior } from 'd3';
 import { select, type Selection } from 'd3';
 import type { D3GraphNode, D3GraphLink } from './types';
 import type { VisualSettings } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
 import {
   getNodeRadius,
   getNodeColor,
@@ -40,6 +41,9 @@ export function useD3Graph({
   selectedNode,
   onSelectNode,
 }: UseD3GraphProps) {
+  const theme = useAppStore((s) => s.theme);
+  const isDark = theme === 'dark';
+
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const zoomGRef = useRef<SVGGElement>(null);
@@ -202,7 +206,7 @@ export function useD3Graph({
       .enter()
       .append('circle')
       .attr('r', (d) => getNodeRadius(d, visualSettings.nodeSize, nodesCopy))
-      .attr('fill', (d) => getNodeColor(d, nodesCopy))
+      .attr('fill', (d) => getNodeColor(d, nodesCopy, isDark))
       .attr('stroke', (d) => (d.id === selectedNodeRef.current ? 'var(--accent-start)' : 'var(--card)'))
       .attr('stroke-width', (d) => (d.id === selectedNodeRef.current ? 3 : 1.5))
       .attr('cursor', 'pointer')
@@ -351,7 +355,14 @@ export function useD3Graph({
         simRef.current.stop();
       }
     };
-  }, [nodes, links, visualSettings, dimensions, onSelectNode]);
+  }, [nodes, links, visualSettings, dimensions, onSelectNode, isDark]);
+
+  // Reactive update for theme-aware node colors without rebuilding simulation
+  useEffect(() => {
+    const nodeSel = nodeSelRef.current;
+    if (!nodeSel) return;
+    nodeSel.attr('fill', (d) => getNodeColor(d, nodes, isDark));
+  }, [isDark, nodes]);
 
   // Reactive update for highlight & selection without rebuilding simulation
   useEffect(() => {

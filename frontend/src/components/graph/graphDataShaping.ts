@@ -6,12 +6,22 @@ import type { D3GraphNode, D3GraphLink } from './types';
    color tiering, and network topology analysis from UI rendering.
    ═══════════════════════════════════════════════════ */
 
-/** Color tiering based on global PageRank position */
-export function getNodeColor(node: D3GraphNode, sortedNodes: D3GraphNode[]): string {
+/** Color tiering based on global PageRank position — theme-aware */
+export function getNodeColor(
+  node: D3GraphNode,
+  sortedNodes: D3GraphNode[],
+  isDark: boolean = false
+): string {
   const idx = sortedNodes.findIndex((p) => p.id === node.id);
-  if (idx < 3) return '#f97316'; // Orange — Tier 1 authority
-  if (idx < 7) return '#ec4899'; // Pink — Tier 2 authority
-  return '#6b7280'; // Slate Gray — Tier 3 baseline
+  if (isDark) {
+    if (idx < 3) return '#f97316'; // Orange — Tier 1 authority
+    if (idx < 7) return '#ec4899'; // Pink — Tier 2 authority
+    return '#6b7280';              // Slate Gray — Tier 3 baseline
+  } else {
+    if (idx < 3) return '#9b8fe8'; // Medium Lavender — Top 3 authority
+    if (idx < 7) return '#c4b5fd'; // Soft Violet — Mid Tier
+    return '#94a3b8';              // Slate — Low Tier
+  }
 }
 
 /** Calculate node radius depending on selected sizing metric */

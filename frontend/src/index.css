@@ -9,44 +9,44 @@
    ═══════════════════════════════════════════════════ */
 
 :root {
-  /* ── Light theme (default) ── */
-  --bg: #f5f3ff;
-  --card: #ffffff;
-  --card-hover: #f9f7ff;
-  --border: #e5e1f5;
-  --border-hover: #d4cef0;
+  /* ── Light theme — Lavender ── */
+  --bg: #f4f0ff;
+  --card: #fdfcff;
+  --card-hover: #f8f5ff;
+  --border: #ddd5f5;
+  --border-hover: #c7bcee;
 
-  /* Contrast checked: #1a1625 on #ffffff is 16.5:1, on #f5f3ff is 15.2:1 */
-  --text-primary: #1a1625;
-  /* Contrast checked: #4a4560 on #ffffff is 7.2:1, on #f5f3ff is 6.6:1 */
-  --text-secondary: #4a4560;
-  /* Contrast checked: #6b6584 on #ffffff is 5.48:1, on #f5f3ff is 5.06:1 (Fixes P6) */
-  --text-muted: #6b6584;
+  --text-primary: #1e1233;
+  --text-secondary: #4a3d70;
+  --text-muted: #6f6396;
 
-  --accent-start: #7c3aed;
-  --accent-mid: #db2777;
-  --accent-end: #3b82f6;
-  --accent-glow: rgba(124, 58, 237, 0.25);
+  /* Flat lavender accent — single solid color, no gradients */
+  --accent-start: #9b8fe8;
+  --accent-mid: #9b8fe8;
+  --accent-end: #9b8fe8;
+  --accent-solid: #9b8fe8;
+  --accent-hover: #8577d8;
+  --accent-glow: rgba(155, 143, 232, 0.22);
 
-  --sidebar-bg: #ffffff;
-  --sidebar-hover: #f3f0ff;
-  --sidebar-active: #ede9fe;
+  --sidebar-bg: rgba(253, 252, 255, 0.90);
+  --sidebar-hover: #ede8ff;
+  --sidebar-active: #e2daff;
 
-  --navbar-bg: rgba(255, 255, 255, 0.88);
+  --navbar-bg: rgba(253, 252, 255, 0.78);
 
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-card-hover: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-card: 0 1px 4px rgba(155, 143, 232, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-card-hover: 0 6px 24px rgba(155, 143, 232, 0.14), 0 2px 6px rgba(0, 0, 0, 0.05);
 
-  --tab-active-bg: #ede9fe;
-  --tab-active-text: #6d28d9;
-  --tab-inactive-text: #5b5574;
-  --tab-hover-bg: #f3f0ff;
+  --tab-active-bg: #e2daff;
+  --tab-active-text: #7b6ed6;
+  --tab-inactive-text: #6b7280;
+  --tab-hover-bg: #ede8ff;
 
-  --promo-bg: linear-gradient(135deg, #f3f0ff, #fce7f3);
-  --promo-icon-bg: linear-gradient(135deg, #7c3aed, #db2777);
+  --promo-bg: linear-gradient(135deg, #ede8ff, #f4f0ff);
+  --promo-icon-bg: #9b8fe8;
 
-  --scrollbar-track: #f1f0f5;
-  --scrollbar-thumb: #d1cde0;
+  --scrollbar-track: #ede8ff;
+  --scrollbar-thumb: #c7bcee;
 
   /* Radii */
   --radius-sm: 8px;
@@ -292,4 +292,60 @@ body {
 .alpha-range::-moz-range-thumb:hover {
   box-shadow: 0 0 14px var(--accent-glow);
   transform: scale(1.15);
+}
+
+/* ═══════════════════════════════════════════════════
+   LIGHT THEME OVERRIDES — Lavender, flat accent, glassy
+   (scoped to :root:not(.dark) so dark/midnight-sunset
+    gradients are completely unaffected)
+   ═══════════════════════════════════════════════════ */
+
+/* Flatten gradient to solid lavender — light mode only */
+:root:not(.dark) .bg-accent-gradient,
+:root:not(.dark) [class*="bg-accent-gradient"] {
+  background: var(--accent-solid) !important;
+}
+
+/* Glassy card surfaces — lavender-tinted, light mode only */
+:root:not(.dark) .glass-card {
+  background: rgba(253, 252, 255, 0.68);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid rgba(155, 143, 232, 0.12);
+  box-shadow: 0 4px 24px rgba(155, 143, 232, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+/* Glassy sidebar — lavender tint, light mode only */
+:root:not(.dark) .glass-sidebar {
+  background: rgba(253, 252, 255, 0.86);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border-right: 1px solid rgba(155, 143, 232, 0.10);
+}
+
+/* Solid lavender buttons — light mode only */
+:root:not(.dark) .btn-accent,
+:root:not(.dark) button[class*="bg-accent-gradient"],
+:root:not(.dark) .accent-btn {
+  background: #9b8fe8 !important;
+  box-shadow: 0 2px 14px rgba(155, 143, 232, 0.32);
+  transition:
+    background 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.15s ease;
+}
+:root:not(.dark) .btn-accent:hover,
+:root:not(.dark) button[class*="bg-accent-gradient"]:hover,
+:root:not(.dark) .accent-btn:hover {
+  background: #8577d8 !important;
+  box-shadow: 0 4px 20px rgba(155, 143, 232, 0.42);
+  transform: translateY(-1px);
+}
+
+/* Gradient-text — flat lavender in light, gradient in dark */
+:root:not(.dark) .gradient-text {
+  background: #9b8fe8;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Network, X } from 'lucide-react';
-import { useAppStore } from '../../src/store/useAppStore';
+import { useAppStore } from '../store/useAppStore';
 import AsyncState from './AsyncState';
 import NodeDetailsPanel from './NodeDetailsPanel';
 import GraphControls from './graph/GraphControls';
